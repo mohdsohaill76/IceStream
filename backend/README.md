@@ -1,14 +1,39 @@
-# Backend Module
+# IceStream - Backend & Integration Layer
 
-## Responsibility
-The `backend` module serves as the central API and integration layer for the IceStream observability platform. It aggregates pipeline metrics, manages system state, coordinates incident communication, and exposes REST and WebSocket endpoints for the frontend dashboard.
+## Overview
+This module is the backend and integration layer for the **IceStream** project. It provides the central API services, orchestrates integration across data pipeline components, and manages state communication for observability and analytics dashboards.
 
-## Module Owner
-**Person 1: Backend + Integration Lead**
+## Future Capabilities
+In upcoming phases, this layer will eventually:
+- Expose data pipeline health and operational status via REST APIs.
+- Manage and query incident lifecycle and anomaly events.
+- Provide real-time monitoring communication via WebSockets to the frontend dashboard.
+- Integrate metadata and metrics from Kafka, Apache Flink, and Apache Iceberg.
 
-## Planned Implementation
-- FastAPI application setup (`app/`)
-- REST API endpoints for pipeline health, table metrics, and historical incidents
-- WebSocket service for real-time state and alert streaming to the frontend
-- Integration layer connecting Iceberg metadata, Kafka consumer offsets, and Data Quality metrics
-- Comprehensive module tests (`tests/`)
+## Current Status: Week 1 Foundation
+> **Note**: This is currently **Week 1 foundation work**.
+> - Minimal FastAPI project layout established.
+> - Health check endpoint (`GET /health`) implemented.
+> - Environment configuration scaffolding in place.
+> - External integrations (Kafka, Flink, Iceberg, WebSockets, databases) and business logic are deferred to subsequent development phases.
+
+## Project Structure
+```text
+backend/
+├── app/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── config.py
+│   ├── models/
+│   │   └── __init__.py
+│   ├── routes/
+│   │   └── __init__.py
+│   └── services/
+│       └── __init__.py
+│
+├── tests/
+│   └── __init__.py
+│
+├── requirements.txt
+└── README.md
+```
