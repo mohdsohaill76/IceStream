@@ -1,15 +1,42 @@
-# Data Quality & Reliability Module
+# IceStream - Data Quality & Circuit Breaker Developer
 
-## Responsibility
-The `data-quality` module is responsible for defining data validation rules, monitoring schema drift, calculating real-time error rates, enforcing circuit-breaker logic, and routing invalid records to remediation and Dead-Letter Queues (DLQ).
+## Overview
 
-## Module Owner
-**Person 5: Data Quality + Reliability**
+This module is responsible for detecting bad data and protecting the
+IceStream pipeline from data-quality failures.
 
-## Planned Implementation
-- Data quality validation rules engine (`src/`)
-- NULL check and schema-change detection mechanisms
-- Real-time error-rate calculation algorithms
-- 2% threshold circuit-breaker alerting and automatic pipeline isolation
-- DLQ routing and remediation workflows
-- Data quality unit and rule evaluation tests (`tests/`)
+It validates incoming e-commerce transactions, calculates the error rate,
+and activates the Circuit Breaker when the error rate exceeds the **2% threshold**.
+
+---
+
+## Responsibilities
+
+- Validate incoming transaction data
+- Detect NULL values
+- Detect invalid values
+- Detect schema changes
+- Calculate data error rate
+- Activate the Circuit Breaker
+- Route bad records to the DLQ
+- Create incident information
+- Manage pipeline health and recovery status
+
+---
+
+## Data Quality Flow
+
+```text
+Incoming Data
+      ↓
+Quality Validation
+      ↓
+Error Rate Calculation
+      ↓
+Error Rate > 2% ?
+    /       \
+   NO       YES
+   ↓         ↓
+Normal     Circuit Breaker
+Processing      ↓
+               DLQ
