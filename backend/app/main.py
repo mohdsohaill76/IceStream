@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.config import settings
+from app.routes.incidents import router as incidents_router
 from app.routes.pipeline import router as pipeline_router
 
 app = FastAPI(
@@ -10,10 +11,12 @@ app = FastAPI(
 )
 
 app.include_router(pipeline_router, prefix="/api/v1/pipeline", tags=["pipeline"])
+app.include_router(incidents_router, prefix="/api/v1/incidents", tags=["incidents"])
 
 
 @app.get("/health")
 def health_check():
     """Health check endpoint to verify backend service status."""
     return {"status": "healthy"}
+
 
