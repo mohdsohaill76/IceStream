@@ -1,0 +1,27 @@
+from app.config import REQUIRED_FIELDS
+
+
+def validate_record(record):
+    errors = []
+
+    # Check required fields
+    for field in REQUIRED_FIELDS:
+        if field not in record or record[field] is None:
+            errors.append(f"{field} is missing")
+
+    # Check quantity
+    if "quantity" in record and record["quantity"] is not None:
+        if record["quantity"] <= 0:
+            errors.append("quantity must be greater than 0")
+
+    # Check amount
+    if "amount" in record and record["amount"] is not None:
+        if record["amount"] <= 0:
+            errors.append("amount must be greater than 0")
+
+    # Check tax
+    if "tax" in record and record["tax"] is not None:
+        if record["tax"] < 0:
+            errors.append("tax cannot be negative")
+
+    return len(errors) == 0, errors
