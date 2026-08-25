@@ -31,10 +31,16 @@ def run_flink_job():
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_parallelism(1)
 
-    # 2. Add Kafka Connector JAR if available locally
-    kafka_jar = os.path.join(os.getcwd(), "lib", "flink-sql-connector-kafka-3.0.1-1.18.jar")
-    if os.path.exists(kafka_jar):
-        env.add_jars(f"file://{kafka_jar}")
+    # 2. Add Kafka Connector JAR
+    jar_path = os.path.abspath(os.path.join("lib", "flink-sql-connector-kafka.jar"))
+    if os.path.exists(jar_path):
+        # Convert backslashes outside the f-string placeholder
+        clean_path = jar_path.replace("\\", "/")
+        formatted_jar_uri = f"file:///{clean_path}"
+        env.add_jars(formatted_jar_uri)
+        logger.info(f"Successfully loaded Kafka JAR: {formatted_jar_uri}")
+    else:
+        logger.warning(f"Kafka JAR not found at: {jar_path}")
 
     # 3. Configure Kafka Source to consume Person 2's topic
     kafka_source = KafkaSource.builder() \
