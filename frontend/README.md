@@ -1,13 +1,16 @@
-# Frontend Dashboard Module
+# React + Vite
 
-## Responsibility
-The `frontend` module provides an interactive web-based monitoring dashboard for real-time visualization of the lakehouse data pipeline, active metrics, health indicators, and incident management.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Module Owner
-**Person 6: Frontend + Monitoring**
+Currently, two official plugins are available:
 
-## Planned Implementation
-- React single-page application structure (`src/`)
-- React Flow interactive pipeline topology graph (Kafka → Flink → Iceberg)
-- Real-time WebSocket connection for live pipeline metrics and status updates
-- Incident alerting, error rate indicators, and circuit breaker status dashboard
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
