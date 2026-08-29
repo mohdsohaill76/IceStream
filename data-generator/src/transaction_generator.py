@@ -1,4 +1,5 @@
 import json
+import os
 import random
 import time
 import uuid
@@ -7,45 +8,40 @@ from datetime import datetime, timezone
 from kafka import KafkaProducer
 
 
-KAFKA_SERVER = "localhost:9092"
-KAFKA_TOPIC = "transactions"
+KAFKA_SERVER = os.getenv("KAFKA_SERVER", "localhost:9092")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "transactions")
+GENERATION_RATE = float(os.getenv("GENERATION_RATE", "1"))
+NULL_INJECTION_RATE = float(os.getenv("NULL_INJECTION_RATE", "0.05"))
+SCHEMA_CHANGE_RATE = float(os.getenv("SCHEMA_CHANGE_RATE", "0.05"))
 
-# Number of transactions generated per second
-GENERATION_RATE = 1
 
-
-producer = KafkaProducer(
-    bootstrap_servers=KAFKA_SERVER,
-    value_serializer=lambda value: json.dumps(value).encode("utf-8"),
-)
+def create_producer():
+    return KafkaProducer(
+        bootstrap_servers=KAFKA_SERVER,
+        value_serializer=lambda value: json.dumps(value).encode("utf-8"),
+    )
 
 
 def generate_transaction():
     amount = round(random.uniform(100, 5000), 2)
-    tax_amount = round(amount * 0.18, 2)
-
-    # Deliberate bad-data injection
-    # Around 5% of records will contain a NULL tax amount.
-    inject_null = random.random() < 0.05
-
-    # Around 2% of records will contain an unexpected field
-    # to simulate a schema change.
-    inject_schema_change = random.random() < 0.02
 
     transaction = {
         "transaction_id": str(uuid.uuid4()),
         "customer_id": f"CUST-{random.randint(1000, 9999)}",
-        "product_id": f"PROD-{random.randint(100, 999)}",
         "amount": amount,
-        "tax_amount": None if inject_null else tax_amount,
+        "currency": "INR",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "payment_status": random.choice(
-            ["SUCCESS", "PENDING", "FAILED"]
-        ),
+        "merchant": f"MERCHANT-{random.randint(100, 999)}",
+        "status": random.choice(["SUCCESS", "PENDING", "FAILED"]),
     }
 
-    # Add an unexpected field to simulate a schema change.
-    if inject_schema_change:
+    # Deliberate NULL-value injection
+    if random.random() < NULL_INJECTION_RATE:
+        field = random.choice(list(transaction.keys()))
+        transaction[field] = None
+
+    # Deliberate schema-change injection
+    if random.random() < SCHEMA_CHANGE_RATE:
         transaction["unexpected_field"] = "SCHEMA_CHANGE"
 
     return transaction
@@ -56,6 +52,8 @@ def main():
     print(f"Kafka Server: {KAFKA_SERVER}")
     print(f"Kafka Topic: {KAFKA_TOPIC}")
     print(f"Generation Rate: {GENERATION_RATE} transaction(s)/second")
+
+    producer = create_producer()
 
     try:
         while True:

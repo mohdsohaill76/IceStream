@@ -12,11 +12,11 @@ def test_transaction_has_required_fields():
     required_fields = {
         "transaction_id",
         "customer_id",
-        "product_id",
         "amount",
-        "tax_amount",
+        "currency",
         "timestamp",
-        "payment_status",
+        "merchant",
+        "status",
     }
 
     assert required_fields.issubset(transaction.keys())
@@ -36,18 +36,49 @@ def test_amount_is_valid():
     assert 100 <= transaction["amount"] <= 5000
 
 
-def test_payment_status_is_valid():
+def test_status_is_valid():
     transaction = generate_transaction()
 
-    assert transaction["payment_status"] in {
+    assert transaction["status"] in {
         "SUCCESS",
         "PENDING",
         "FAILED",
     }
 
 
-def test_customer_and_product_ids():
+def test_customer_id_is_valid():
     transaction = generate_transaction()
 
     assert transaction["customer_id"].startswith("CUST-")
-    assert transaction["product_id"].startswith("PROD-")
+
+
+def test_currency_is_valid():
+    transaction = generate_transaction()
+
+    assert transaction["currency"] == "INR"
+
+
+def test_null_injection():
+    null_found = False
+
+    for _ in range(200):
+        transaction = generate_transaction()
+
+        if any(value is None for value in transaction.values()):
+            null_found = True
+            break
+
+    assert null_found
+
+
+def test_schema_change_injection():
+    schema_change_found = False
+
+    for _ in range(200):
+        transaction = generate_transaction()
+
+        if "unexpected_field" in transaction:
+            schema_change_found = True
+            break
+
+    assert schema_change_found
