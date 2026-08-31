@@ -121,7 +121,7 @@ class TransactionDeduplicatorFunction(KeyedProcessFunction):
         ttl_config = (
             StateTtlConfig.new_builder(Time.hours(24))
             .set_update_type(StateTtlConfig.UpdateType.OnCreateAndWrite)
-            .setStateVisibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
+            .set_state_visibility(StateTtlConfig.StateVisibility.NeverReturnExpired)
             .build()
         )
 
