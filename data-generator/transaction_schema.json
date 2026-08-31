@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "IceStream Transaction",
+  "description": "Shared transaction contract for IceStream Kafka producer and downstream services.",
+  "type": "object",
+  "required": [
+    "transaction_id",
+    "customer_id",
+    "amount",
+    "currency",
+    "timestamp",
+    "merchant",
+    "status"
+  ],
+  "properties": {
+    "transaction_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "merchant": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "SUCCESS",
+        "PENDING",
+        "FAILED"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

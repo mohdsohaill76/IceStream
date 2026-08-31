@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime, timezone
 
 from kafka import KafkaProducer
+from kafka.errors import KafkaError
+from kafka.serializer import Serializer
 
 
 KAFKA_SERVER = os.getenv("KAFKA_SERVER", "localhost:9092")
@@ -15,11 +17,45 @@ NULL_INJECTION_RATE = float(os.getenv("NULL_INJECTION_RATE", "0.05"))
 SCHEMA_CHANGE_RATE = float(os.getenv("SCHEMA_CHANGE_RATE", "0.05"))
 
 
-def create_producer():
-    return KafkaProducer(
-        bootstrap_servers=KAFKA_SERVER,
-        value_serializer=lambda value: json.dumps(value).encode("utf-8"),
-    )
+if GENERATION_RATE <= 0:
+    raise ValueError("GENERATION_RATE must be greater than 0")
+
+
+class JsonSerializer(Serializer):
+    def serialize(self, topic, value):
+        return json.dumps(value).encode("utf-8")
+
+
+def create_producer(max_retries=5, retry_delay=2):
+    last_error = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=KAFKA_SERVER,
+                value_serializer=JsonSerializer(),
+                retries=5,
+                retry_backoff_ms=1000,
+                acks="all",
+            )
+
+            print("Connected to Kafka successfully.")
+            return producer
+
+        except Exception as error:
+            last_error = error
+
+            print(
+                f"Kafka connection failed. "
+                f"Retry {attempt}/{max_retries} in {retry_delay} seconds..."
+            )
+
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+
+    raise RuntimeError(
+        f"Could not connect to Kafka after {max_retries} attempts."
+    ) from last_error
 
 
 def generate_transaction():
@@ -59,10 +95,12 @@ def main():
         while True:
             transaction = generate_transaction()
 
-            producer.send(KAFKA_TOPIC, transaction)
-            producer.flush()
+            try:
+                producer.send(KAFKA_TOPIC, transaction)
+                print("Sent:", transaction)
 
-            print("Sent:", transaction)
+            except KafkaError as error:
+                print(f"Kafka send error: {error}")
 
             time.sleep(1 / GENERATION_RATE)
 
@@ -70,6 +108,7 @@ def main():
         print("\nProducer stopped.")
 
     finally:
+        producer.flush()
         producer.close()
 
 

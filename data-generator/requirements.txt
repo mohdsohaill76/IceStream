@@ -1,2 +1,2 @@
-kafka-python
-pytest
+kafka-python-ng==2.2.3
+pytest==9.1.1

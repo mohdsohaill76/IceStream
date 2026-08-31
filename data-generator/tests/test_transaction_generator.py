@@ -1,5 +1,7 @@
+from kafka.serializer import Serializer
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -7,7 +9,9 @@ from transaction_generator import generate_transaction
 
 
 def test_transaction_has_required_fields():
-    transaction = generate_transaction()
+    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
+         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0):
+        transaction = generate_transaction()
 
     required_fields = {
         "transaction_id",
@@ -23,21 +27,27 @@ def test_transaction_has_required_fields():
 
 
 def test_transaction_id_is_present():
-    transaction = generate_transaction()
+    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
+         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0):
+        transaction = generate_transaction()
 
     assert transaction["transaction_id"]
     assert isinstance(transaction["transaction_id"], str)
 
 
 def test_amount_is_valid():
-    transaction = generate_transaction()
+    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
+         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0):
+        transaction = generate_transaction()
 
     assert isinstance(transaction["amount"], float)
     assert 100 <= transaction["amount"] <= 5000
 
 
 def test_status_is_valid():
-    transaction = generate_transaction()
+    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
+         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0):
+        transaction = generate_transaction()
 
     assert transaction["status"] in {
         "SUCCESS",
@@ -47,38 +57,32 @@ def test_status_is_valid():
 
 
 def test_customer_id_is_valid():
-    transaction = generate_transaction()
+    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
+         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0):
+        transaction = generate_transaction()
 
     assert transaction["customer_id"].startswith("CUST-")
 
 
 def test_currency_is_valid():
-    transaction = generate_transaction()
+    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
+         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0):
+        transaction = generate_transaction()
 
     assert transaction["currency"] == "INR"
 
 
 def test_null_injection():
-    null_found = False
-
-    for _ in range(200):
+    with patch("transaction_generator.NULL_INJECTION_RATE", 1), \
+         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0):
         transaction = generate_transaction()
 
-        if any(value is None for value in transaction.values()):
-            null_found = True
-            break
-
-    assert null_found
+    assert any(value is None for value in transaction.values())
 
 
 def test_schema_change_injection():
-    schema_change_found = False
-
-    for _ in range(200):
+    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
+         patch("transaction_generator.SCHEMA_CHANGE_RATE", 1):
         transaction = generate_transaction()
 
-        if "unexpected_field" in transaction:
-            schema_change_found = True
-            break
-
-    assert schema_change_found
+    assert transaction["unexpected_field"] == "SCHEMA_CHANGE"
