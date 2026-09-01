@@ -5,7 +5,7 @@ from kafka import KafkaConsumer
 
 
 KAFKA_SERVER = os.getenv("KAFKA_SERVER", "localhost:9092")
-KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "transactions")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "ecommerce-transactions")
 
 
 def create_consumer():

@@ -5,8 +5,8 @@ from kafka.errors import TopicAlreadyExistsError
 
 
 KAFKA_SERVER = os.getenv("KAFKA_SERVER", "localhost:9092")
-KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "transactions")
-KAFKA_PARTITIONS = int(os.getenv("KAFKA_PARTITIONS", "1"))
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "ecommerce-transactions")
+KAFKA_PARTITIONS = int(os.getenv("KAFKA_PARTITIONS", "3"))
 KAFKA_REPLICATION_FACTOR = int(os.getenv("KAFKA_REPLICATION_FACTOR", "1"))
 
 
