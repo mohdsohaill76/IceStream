@@ -1,8 +1,8 @@
 # Test the main data quality flow
-from app.main import process_records
 
+from app import main
 
-def test_process_records():
+def test_process_records(monkeypatch):
     # Sample valid and invalid transactions
     records = [
         {
@@ -23,7 +23,16 @@ def test_process_records():
         }
     ]
 
-    result = process_records(records)
+    # Fake DLQ so the test does not need a Kafka broker
+    def fake_send_to_dlq(record, errors):
+        return {
+            "record": record,
+            "errors": errors
+        }
+
+    monkeypatch.setattr(main, "send_to_dlq", fake_send_to_dlq)
+
+    result = main.process_records(records)
 
     assert result["total_records"] == 2
     assert result["bad_records"] == 1

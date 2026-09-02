@@ -1,9 +1,8 @@
-# Test DLQ record creation
-from app.dlq.dlq_producer import send_to_dlq
+
+from app.dlq import dlq_producer
 from app.dlq.incident import create_incident
 
-
-def test_send_to_dlq():
+def test_send_to_dlq(monkeypatch):
     # Sample invalid transaction
     record = {
         "transaction_id": "TXN002",
@@ -14,14 +13,30 @@ def test_send_to_dlq():
         "tax": None
     }
 
-    # Validation error for the transaction
     errors = ["tax is missing"]
 
-    result = send_to_dlq(record, errors)
+    # Fake Kafka producer so test does not need Kafka
+    class FakeProducer:
+        def send(self, topic, value):
+            self.topic = topic
+            self.value = value
+
+        def flush(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        dlq_producer,
+        "create_dlq_producer",
+        lambda: FakeProducer()
+    )
+
+    result = dlq_producer.send_to_dlq(record, errors)
 
     assert result["record"] == record
     assert result["errors"] == errors
-
 
 def test_create_incident():
     # Sample invalid transaction
@@ -31,7 +46,6 @@ def test_create_incident():
         "tax": None
     }
 
-    # Validation error for the transaction
     errors = ["tax is missing"]
 
     result = create_incident(record, errors)
