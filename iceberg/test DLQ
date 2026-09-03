@@ -1,0 +1,6 @@
+{
+  "transaction_id": "BAD001",
+  "amount": null,
+  "tax_amount": 50,
+  "region": "EU"
+}
