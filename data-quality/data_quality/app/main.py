@@ -1,8 +1,10 @@
+# Process transactions through validation, DLQ, circuit breaker, and monitoring
 from app.quality.validator import validate_record
 from app.quality.error_rate import calculate_error_rate
 from app.dlq.dlq_producer import send_to_dlq
+from app.circuit_breaker.circuit_breaker import check_circuit
+from app.monitoring.status_producer import create_status
 from app.config import ERROR_RATE_THRESHOLD
-
 
 def process_records(records):
     total_records = len(records)
@@ -22,20 +24,27 @@ def process_records(records):
     # Calculate error rate
     error_rate = calculate_error_rate(bad_records, total_records)
 
-    # Check error-rate threshold
-    circuit_breaker_triggered = error_rate > ERROR_RATE_THRESHOLD
+    # Check circuit breaker
+    circuit_state = check_circuit(error_rate)
+
+    # Create monitoring status
+    monitoring_status = create_status(
+        circuit_state,
+        error_rate
+    )
 
     return {
         "total_records": total_records,
         "bad_records": bad_records,
         "error_rate": error_rate,
-        "circuit_breaker_triggered": circuit_breaker_triggered,
-        "dlq_records": dlq_records
+        "circuit_breaker_triggered": (
+            error_rate > ERROR_RATE_THRESHOLD
+        ),
+        "dlq_records": dlq_records,
+        "monitoring_status": monitoring_status
     }
 
-
 if __name__ == "__main__":
-
     sample_records = [
         {
             "transaction_id": "T001",
