@@ -1,5 +1,5 @@
+from datetime import datetime
 from app.config import REQUIRED_FIELDS
-
 
 def validate_record(record):
     errors = []
@@ -14,13 +14,6 @@ def validate_record(record):
         if field in record and record[field] == "":
             errors.append(f"{field} cannot be empty")
 
-    # Check quantity
-    if "quantity" in record and record["quantity"] is not None:
-        if not isinstance(record["quantity"], (int, float)):
-            errors.append("quantity must be a number")
-        elif record["quantity"] <= 0:
-            errors.append("quantity must be greater than 0")
-
     # Check amount
     if "amount" in record and record["amount"] is not None:
         if not isinstance(record["amount"], (int, float)):
@@ -28,11 +21,26 @@ def validate_record(record):
         elif record["amount"] <= 0:
             errors.append("amount must be greater than 0")
 
-    # Check tax
-    if "tax" in record and record["tax"] is not None:
-        if not isinstance(record["tax"], (int, float)):
-            errors.append("tax must be a number")
-        elif record["tax"] < 0:
-            errors.append("tax cannot be negative")
+    # Check currency
+    if "currency" in record and record["currency"] is not None:
+        if not isinstance(record["currency"], str) or record["currency"] == "":
+            errors.append("currency cannot be empty")
+
+    # Check merchant
+    if "merchant" in record and record["merchant"] is not None:
+        if not isinstance(record["merchant"], str) or record["merchant"] == "":
+            errors.append("merchant cannot be empty")
+
+    # Check status
+    if "status" in record and record["status"] is not None:
+        if record["status"] not in ["SUCCESS", "PENDING", "FAILED"]:
+            errors.append("status is invalid")
+
+    # Check timestamp
+    if "timestamp" in record and record["timestamp"] is not None:
+        try:
+            datetime.fromisoformat(record["timestamp"].replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            errors.append("timestamp is invalid")
 
     return len(errors) == 0, errors

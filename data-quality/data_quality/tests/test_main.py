@@ -1,5 +1,4 @@
 # Test the main data quality flow
-
 from app import main
 
 def test_process_records(monkeypatch):
@@ -8,18 +7,20 @@ def test_process_records(monkeypatch):
         {
             "transaction_id": "TXN001",
             "customer_id": "CUST001",
-            "product_id": "PROD001",
-            "quantity": 2,
             "amount": 500,
-            "tax": 50
+            "currency": "INR",
+            "timestamp": "2026-09-03T10:00:00Z",
+            "merchant": "MERCHANT-101",
+            "status": "SUCCESS"
         },
         {
             "transaction_id": "TXN002",
-            "customer_id": "CUST001",
-            "product_id": "PROD001",
-            "quantity": 0,
+            "customer_id": "CUST002",
             "amount": 500,
-            "tax": 50
+            "currency": "INR",
+            "timestamp": "2026-09-03T10:00:00Z",
+            "merchant": "MERCHANT-102",
+            "status": "UNKNOWN"
         }
     ]
 
