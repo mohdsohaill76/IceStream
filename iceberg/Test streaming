@@ -1,0 +1,9 @@
+{
+  "transaction_id": "TX1001",
+  "customer_id": "C101",
+  "product_id": "P501",
+  "amount": 1000.00,
+  "tax_amount": 100.00,
+  "region": "EU",
+  "event_time": "2026-08-31T10:00:00"
+}
