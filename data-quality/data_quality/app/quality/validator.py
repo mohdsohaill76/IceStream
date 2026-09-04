@@ -23,8 +23,8 @@ def validate_record(record):
 
     # Check currency
     if "currency" in record and record["currency"] is not None:
-        if not isinstance(record["currency"], str) or record["currency"] == "":
-            errors.append("currency cannot be empty")
+       if not isinstance(record["currency"], str) or record["currency"] != "INR":
+        errors.append("currency must be INR")
 
     # Check merchant
     if "merchant" in record and record["merchant"] is not None:

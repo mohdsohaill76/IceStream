@@ -70,3 +70,19 @@ def test_empty_ids():
     assert valid is False
     assert "transaction_id cannot be empty" in errors
     assert "customer_id cannot be empty" in errors
+
+def test_invalid_currency():
+    record = {
+        "transaction_id": "TXN004",
+        "customer_id": "CUST004",
+        "amount": 500,
+        "currency": "INVALID",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-104",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "currency must be INR" in errors
