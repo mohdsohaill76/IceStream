@@ -33,3 +33,21 @@ def test_missing_field():
 
     assert valid is False
     assert "status is missing" in errors
+
+def test_unexpected_field():
+    # Transaction with an unexpected field
+    record = {
+        "transaction_id": "TXN003",
+        "customer_id": "CUST003",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-103",
+        "status": "SUCCESS",
+        "unexpected_field": "BAD"
+    }
+
+    valid, errors = validate_schema(record)
+
+    assert valid is False
+    assert "unexpected_field is not allowed" in errors
