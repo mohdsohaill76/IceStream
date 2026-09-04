@@ -86,3 +86,38 @@ def test_invalid_currency():
 
     assert valid is False
     assert "currency must be INR" in errors
+
+def test_id_must_be_string():
+    # IDs must be strings
+    record = {
+        "transaction_id": 123,
+        "customer_id": "CUST005",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-105",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "transaction_id must be a string" in errors
+
+def test_whitespace_only_ids():
+    # IDs containing only whitespace are invalid
+    record = {
+        "transaction_id": "   ",
+        "customer_id": "\t",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-105",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "transaction_id cannot be empty" in errors
+    assert "customer_id cannot be empty" in errors

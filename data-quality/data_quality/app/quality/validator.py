@@ -9,10 +9,13 @@ def validate_record(record):
         if field not in record or record[field] is None:
             errors.append(f"{field} is missing")
 
-    # Check that IDs are not empty
+    # Check ID type and empty values
     for field in ["transaction_id", "customer_id"]:
-        if field in record and record[field] == "":
-            errors.append(f"{field} cannot be empty")
+        if field in record and record[field] is not None:
+            if not isinstance(record[field], str):
+                errors.append(f"{field} must be a string")
+            elif not record[field].strip():
+                errors.append(f"{field} cannot be empty")
 
     # Check amount
     if "amount" in record and record["amount"] is not None:
