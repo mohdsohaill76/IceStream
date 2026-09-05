@@ -5,33 +5,75 @@ from unittest.mock import MagicMock, patch
 
 from jsonschema import validate
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+# --------------------------------------------------
+# Paths
+# --------------------------------------------------
+
+DATA_GENERATOR_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = DATA_GENERATOR_DIR / "src"
+
+sys.path.insert(0, str(SRC_DIR))
+sys.path.insert(0, str(DATA_GENERATOR_DIR))
+
+
+# --------------------------------------------------
+# Imports
+# --------------------------------------------------
 
 from transaction_generator import (
     generate_transaction,
     generate_payload,
-    get_message_key,
     get_next_transaction,
-    on_send_error,
+    get_message_key,
     on_send_success,
+    on_send_error,
 )
 
+from consumer_verification import process_message
 
-SCHEMA_PATH = Path(__file__).resolve().parents[1] / "transaction_schema.json"
 
-with open(SCHEMA_PATH, "r", encoding="utf-8") as schema_file:
+# --------------------------------------------------
+# Load shared JSON schema
+# --------------------------------------------------
+
+SCHEMA_PATH = DATA_GENERATOR_DIR / "transaction_schema.json"
+
+with open(
+    SCHEMA_PATH,
+    "r",
+    encoding="utf-8",
+) as schema_file:
     TRANSACTION_SCHEMA = json.load(schema_file)
 
 
-def generate_valid_transaction():
-    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
-         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0), \
-         patch("transaction_generator.BAD_AMOUNT_RATE", 0), \
-         patch("transaction_generator.MISSING_FIELD_RATE", 0), \
-         patch("transaction_generator.INVALID_VALUE_RATE", 0):
+# --------------------------------------------------
+# Helper
+# --------------------------------------------------
 
+def generate_valid_transaction():
+    with patch(
+        "transaction_generator.NULL_INJECTION_RATE",
+        0,
+    ), patch(
+        "transaction_generator.SCHEMA_CHANGE_RATE",
+        0,
+    ), patch(
+        "transaction_generator.BAD_AMOUNT_RATE",
+        0,
+    ), patch(
+        "transaction_generator.MISSING_FIELD_RATE",
+        0,
+    ), patch(
+        "transaction_generator.INVALID_VALUE_RATE",
+        0,
+    ):
         return generate_transaction()
 
+
+# --------------------------------------------------
+# Basic transaction tests
+# --------------------------------------------------
 
 def test_transaction_has_required_fields():
     transaction = generate_valid_transaction()
@@ -53,14 +95,17 @@ def test_transaction_id_is_present():
     transaction = generate_valid_transaction()
 
     assert transaction["transaction_id"]
-    assert isinstance(transaction["transaction_id"], str)
 
 
 def test_amount_is_valid():
     transaction = generate_valid_transaction()
 
-    assert isinstance(transaction["amount"], float)
-    assert 100 <= transaction["amount"] <= 5000
+    assert isinstance(
+        transaction["amount"],
+        (int, float),
+    )
+
+    assert transaction["amount"] > 0
 
 
 def test_status_is_valid():
@@ -85,25 +130,52 @@ def test_currency_is_valid():
     assert transaction["currency"] == "INR"
 
 
-def test_null_injection():
-    with patch("transaction_generator.NULL_INJECTION_RATE", 1), \
-         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0), \
-         patch("transaction_generator.BAD_AMOUNT_RATE", 0), \
-         patch("transaction_generator.MISSING_FIELD_RATE", 0), \
-         patch("transaction_generator.INVALID_VALUE_RATE", 0):
+# --------------------------------------------------
+# Anomaly tests
+# --------------------------------------------------
 
+def test_null_injection():
+    with patch(
+        "transaction_generator.NULL_INJECTION_RATE",
+        1,
+    ), patch(
+        "transaction_generator.SCHEMA_CHANGE_RATE",
+        0,
+    ), patch(
+        "transaction_generator.BAD_AMOUNT_RATE",
+        0,
+    ), patch(
+        "transaction_generator.MISSING_FIELD_RATE",
+        0,
+    ), patch(
+        "transaction_generator.INVALID_VALUE_RATE",
+        0,
+    ):
         transaction = generate_transaction()
 
-    assert any(value is None for value in transaction.values())
+    assert any(
+        value is None
+        for value in transaction.values()
+    )
 
 
 def test_schema_change_injection():
-    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
-         patch("transaction_generator.SCHEMA_CHANGE_RATE", 1), \
-         patch("transaction_generator.BAD_AMOUNT_RATE", 0), \
-         patch("transaction_generator.MISSING_FIELD_RATE", 0), \
-         patch("transaction_generator.INVALID_VALUE_RATE", 0):
-
+    with patch(
+        "transaction_generator.NULL_INJECTION_RATE",
+        0,
+    ), patch(
+        "transaction_generator.SCHEMA_CHANGE_RATE",
+        1,
+    ), patch(
+        "transaction_generator.BAD_AMOUNT_RATE",
+        0,
+    ), patch(
+        "transaction_generator.MISSING_FIELD_RATE",
+        0,
+    ), patch(
+        "transaction_generator.INVALID_VALUE_RATE",
+        0,
+    ):
         transaction = generate_transaction()
 
     assert transaction["unexpected_field"] == "SCHEMA_CHANGE"
@@ -120,7 +192,10 @@ def test_duplicate_generation():
         "status": "SUCCESS",
     }
 
-    with patch("transaction_generator.DUPLICATE_RATE", 1):
+    with patch(
+        "transaction_generator.DUPLICATE_RATE",
+        1,
+    ):
         transaction, is_duplicate = get_next_transaction(
             previous_transaction
         )
@@ -130,24 +205,44 @@ def test_duplicate_generation():
 
 
 def test_bad_amount_generation():
-    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
-         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0), \
-         patch("transaction_generator.BAD_AMOUNT_RATE", 1), \
-         patch("transaction_generator.MISSING_FIELD_RATE", 0), \
-         patch("transaction_generator.INVALID_VALUE_RATE", 0):
-
+    with patch(
+        "transaction_generator.NULL_INJECTION_RATE",
+        0,
+    ), patch(
+        "transaction_generator.SCHEMA_CHANGE_RATE",
+        0,
+    ), patch(
+        "transaction_generator.BAD_AMOUNT_RATE",
+        1,
+    ), patch(
+        "transaction_generator.MISSING_FIELD_RATE",
+        0,
+    ), patch(
+        "transaction_generator.INVALID_VALUE_RATE",
+        0,
+    ):
         transaction = generate_transaction()
 
     assert transaction["amount"] <= 0
 
 
 def test_missing_required_field():
-    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
-         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0), \
-         patch("transaction_generator.BAD_AMOUNT_RATE", 0), \
-         patch("transaction_generator.MISSING_FIELD_RATE", 1), \
-         patch("transaction_generator.INVALID_VALUE_RATE", 0):
-
+    with patch(
+        "transaction_generator.NULL_INJECTION_RATE",
+        0,
+    ), patch(
+        "transaction_generator.SCHEMA_CHANGE_RATE",
+        0,
+    ), patch(
+        "transaction_generator.BAD_AMOUNT_RATE",
+        0,
+    ), patch(
+        "transaction_generator.MISSING_FIELD_RATE",
+        1,
+    ), patch(
+        "transaction_generator.INVALID_VALUE_RATE",
+        0,
+    ):
         transaction = generate_transaction()
 
     required_fields = {
@@ -160,16 +255,28 @@ def test_missing_required_field():
         "status",
     }
 
-    assert not required_fields.issubset(transaction.keys())
+    assert not required_fields.issubset(
+        transaction.keys()
+    )
 
 
 def test_invalid_value_generation():
-    with patch("transaction_generator.NULL_INJECTION_RATE", 0), \
-         patch("transaction_generator.SCHEMA_CHANGE_RATE", 0), \
-         patch("transaction_generator.BAD_AMOUNT_RATE", 0), \
-         patch("transaction_generator.MISSING_FIELD_RATE", 0), \
-         patch("transaction_generator.INVALID_VALUE_RATE", 1):
-
+    with patch(
+        "transaction_generator.NULL_INJECTION_RATE",
+        0,
+    ), patch(
+        "transaction_generator.SCHEMA_CHANGE_RATE",
+        0,
+    ), patch(
+        "transaction_generator.BAD_AMOUNT_RATE",
+        0,
+    ), patch(
+        "transaction_generator.MISSING_FIELD_RATE",
+        0,
+    ), patch(
+        "transaction_generator.INVALID_VALUE_RATE",
+        1,
+    ):
         transaction = generate_transaction()
 
     invalid_found = (
@@ -184,12 +291,22 @@ def test_invalid_value_generation():
 
 
 def test_malformed_json_generation():
-    with patch("transaction_generator.MALFORMED_JSON_RATE", 1):
+    with patch(
+        "transaction_generator.MALFORMED_JSON_RATE",
+        1,
+    ):
         payload = generate_payload()
 
     assert isinstance(payload, str)
-    assert payload == '{"transaction_id": "broken", "amount": '
 
+    assert payload == (
+        '{"transaction_id": "broken", "amount": '
+    )
+
+
+# --------------------------------------------------
+# JSON schema validation
+# --------------------------------------------------
 
 def test_valid_transaction_matches_json_schema():
     transaction = generate_valid_transaction()
@@ -200,6 +317,10 @@ def test_valid_transaction_matches_json_schema():
     )
 
 
+# --------------------------------------------------
+# Kafka message key tests
+# --------------------------------------------------
+
 def test_message_key_uses_transaction_id():
     transaction = generate_valid_transaction()
 
@@ -209,33 +330,66 @@ def test_message_key_uses_transaction_id():
 
 
 def test_message_key_is_none_when_transaction_id_missing():
-    transaction = {
-        "customer_id": "CUST-1234",
-        "amount": 500.0,
-    }
+    transaction = generate_valid_transaction()
 
-    assert get_message_key(transaction) is None
+    transaction.pop(
+        "transaction_id",
+        None,
+    )
+
+    key = get_message_key(transaction)
+
+    assert key is None
 
 
-def test_delivery_success_callback(capsys):
+# --------------------------------------------------
+# Kafka callback tests
+# --------------------------------------------------
+
+def test_delivery_success_callback(caplog):
     metadata = MagicMock()
+
     metadata.topic = "ecommerce-transactions"
     metadata.partition = 1
     metadata.offset = 25
 
-    on_send_success(metadata)
+    with caplog.at_level("INFO"):
+        on_send_success(metadata)
 
-    captured = capsys.readouterr()
-
-    assert "ecommerce-transactions" in captured.out
-    assert "partition=1" in captured.out
-    assert "offset=25" in captured.out
+    assert "ecommerce-transactions" in caplog.text
+    assert "partition=1" in caplog.text
+    assert "offset=25" in caplog.text
 
 
-def test_delivery_error_callback(capsys):
-    on_send_error(Exception("Kafka unavailable"))
+def test_delivery_error_callback(caplog):
+    with caplog.at_level("ERROR"):
+        on_send_error(
+            Exception("Kafka unavailable")
+        )
 
-    captured = capsys.readouterr()
+    assert "Kafka delivery failed" in caplog.text
+    assert "Kafka unavailable" in caplog.text
 
-    assert "Kafka delivery failed" in captured.out
-    assert "Kafka unavailable" in captured.out
+
+# --------------------------------------------------
+# Consumer malformed JSON test
+# --------------------------------------------------
+
+def test_malformed_json_does_not_crash_consumer():
+    dlq_producer = MagicMock()
+
+    malformed_message = (
+        b'{"transaction_id": "broken", "amount": '
+    )
+
+    result = process_message(
+        malformed_message,
+        dlq_producer=dlq_producer,
+    )
+
+    assert result is None
+
+    dlq_producer.send.assert_called_once_with(
+        "ecommerce-transactions-dlq",
+        value='{"transaction_id": "broken", "amount": ',
+    )

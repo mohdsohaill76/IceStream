@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import random
 import time
@@ -11,46 +12,102 @@ from kafka.errors import KafkaError
 from kafka.serializer import Serializer
 
 
-KAFKA_SERVER = os.getenv("KAFKA_SERVER", "localhost:9092")
-KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "ecommerce-transactions")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s",
+)
 
-GENERATION_RATE = float(os.getenv("GENERATION_RATE", "1"))
-MAX_EVENTS = int(os.getenv("MAX_EVENTS", "0"))
+logger = logging.getLogger(__name__)
 
-NULL_INJECTION_RATE = float(os.getenv("NULL_INJECTION_RATE", "0.05"))
-SCHEMA_CHANGE_RATE = float(os.getenv("SCHEMA_CHANGE_RATE", "0.05"))
-DUPLICATE_RATE = float(os.getenv("DUPLICATE_RATE", "0.05"))
 
-BAD_AMOUNT_RATE = float(os.getenv("BAD_AMOUNT_RATE", "0.03"))
-MISSING_FIELD_RATE = float(os.getenv("MISSING_FIELD_RATE", "0.03"))
-INVALID_VALUE_RATE = float(os.getenv("INVALID_VALUE_RATE", "0.03"))
-MALFORMED_JSON_RATE = float(os.getenv("MALFORMED_JSON_RATE", "0.02"))
+KAFKA_SERVER = os.getenv(
+    "KAFKA_SERVER",
+    "localhost:9092",
+)
+
+KAFKA_TOPIC = os.getenv(
+    "KAFKA_TOPIC",
+    "ecommerce-transactions",
+)
+
+
+GENERATION_RATE = float(
+    os.getenv("GENERATION_RATE", "1")
+)
+
+NULL_INJECTION_RATE = float(
+    os.getenv("NULL_INJECTION_RATE", "0.05")
+)
+
+SCHEMA_CHANGE_RATE = float(
+    os.getenv("SCHEMA_CHANGE_RATE", "0.05")
+)
+
+DUPLICATE_RATE = float(
+    os.getenv("DUPLICATE_RATE", "0.05")
+)
+
+BAD_AMOUNT_RATE = float(
+    os.getenv("BAD_AMOUNT_RATE", "0.03")
+)
+
+MISSING_FIELD_RATE = float(
+    os.getenv("MISSING_FIELD_RATE", "0.03")
+)
+
+INVALID_VALUE_RATE = float(
+    os.getenv("INVALID_VALUE_RATE", "0.03")
+)
+
+MALFORMED_JSON_RATE = float(
+    os.getenv("MALFORMED_JSON_RATE", "0.02")
+)
+
+MAX_EVENTS = int(
+    os.getenv("MAX_EVENTS", "0")
+)
 
 
 if GENERATION_RATE <= 0:
-    raise ValueError("GENERATION_RATE must be greater than 0")
+    raise ValueError(
+        "GENERATION_RATE must be greater than 0."
+    )
+
+
+def validate_rate(name, value):
+    if not 0 <= value <= 1:
+        raise ValueError(
+            f"{name} must be between 0 and 1."
+        )
+
+
+validate_rate("NULL_INJECTION_RATE", NULL_INJECTION_RATE)
+validate_rate("SCHEMA_CHANGE_RATE", SCHEMA_CHANGE_RATE)
+validate_rate("DUPLICATE_RATE", DUPLICATE_RATE)
+validate_rate("BAD_AMOUNT_RATE", BAD_AMOUNT_RATE)
+validate_rate("MISSING_FIELD_RATE", MISSING_FIELD_RATE)
+validate_rate("INVALID_VALUE_RATE", INVALID_VALUE_RATE)
+validate_rate("MALFORMED_JSON_RATE", MALFORMED_JSON_RATE)
+
 
 if MAX_EVENTS < 0:
-    raise ValueError("MAX_EVENTS cannot be negative")
+    raise ValueError(
+        "MAX_EVENTS cannot be negative."
+    )
 
 
-RATE_NAMES = {
-    "NULL_INJECTION_RATE": NULL_INJECTION_RATE,
-    "SCHEMA_CHANGE_RATE": SCHEMA_CHANGE_RATE,
-    "DUPLICATE_RATE": DUPLICATE_RATE,
-    "BAD_AMOUNT_RATE": BAD_AMOUNT_RATE,
-    "MISSING_FIELD_RATE": MISSING_FIELD_RATE,
-    "INVALID_VALUE_RATE": INVALID_VALUE_RATE,
-    "MALFORMED_JSON_RATE": MALFORMED_JSON_RATE,
-}
-
-for rate_name, rate_value in RATE_NAMES.items():
-    if not 0 <= rate_value <= 1:
-        raise ValueError(f"{rate_name} must be between 0 and 1")
+STATUSES = [
+    "SUCCESS",
+    "PENDING",
+    "FAILED",
+]
 
 
 class JsonSerializer(Serializer):
     def serialize(self, topic, value):
+        if value is None:
+            return None
+
         if isinstance(value, bytes):
             return value
 
@@ -65,226 +122,391 @@ class StringSerializer(Serializer):
         if value is None:
             return None
 
+        if isinstance(value, bytes):
+            return value
+
         return str(value).encode("utf-8")
 
 
-def create_producer(max_retries=5, retry_delay=2):
-    last_error = None
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            producer = KafkaProducer(
-                bootstrap_servers=KAFKA_SERVER,
-                value_serializer=JsonSerializer(),
-                key_serializer=StringSerializer(),
-                retries=5,
-                retry_backoff_ms=1000,
-                acks="all",
-            )
-
-            print("Connected to Kafka successfully.")
-            return producer
-
-        except Exception as error:
-            last_error = error
-
-            print(
-                f"Kafka connection failed. "
-                f"Retry {attempt}/{max_retries} in {retry_delay} seconds..."
-            )
-
-            if attempt < max_retries:
-                time.sleep(retry_delay)
-
-    raise RuntimeError(
-        f"Could not connect to Kafka after {max_retries} attempts."
-    ) from last_error
-
-
-def on_send_success(record_metadata):
-    print(
-        f"Delivered to topic={record_metadata.topic}, "
-        f"partition={record_metadata.partition}, "
-        f"offset={record_metadata.offset}"
+def create_producer():
+    producer = KafkaProducer(
+        bootstrap_servers=KAFKA_SERVER,
+        key_serializer=StringSerializer(),
+        value_serializer=JsonSerializer(),
+        acks="all",
+        retries=5,
+        retry_backoff_ms=1000,
+        request_timeout_ms=30000,
     )
 
+    logger.info(
+        "Connected to Kafka successfully."
+    )
 
-def on_send_error(error):
-    print(f"Kafka delivery failed: {error}")
+    return producer
+
+
+def on_send_success(
+    record_metadata,
+    event_number=None,
+    message_key=None,
+    transaction=None,
+):
+    if event_number is not None:
+        logger.info(
+            "Sent event %s after Kafka acknowledgement: "
+            "key=%s, value=%s | "
+            "topic=%s, partition=%s, offset=%s",
+            event_number,
+            message_key,
+            transaction,
+            record_metadata.topic,
+            record_metadata.partition,
+            record_metadata.offset,
+        )
+
+    else:
+        logger.info(
+            "Delivered to topic=%s, partition=%s, offset=%s",
+            record_metadata.topic,
+            record_metadata.partition,
+            record_metadata.offset,
+        )
+
+
+def on_send_error(
+    error,
+    event_number=None,
+    message_key=None,
+):
+    if event_number is not None:
+        logger.error(
+            "Kafka delivery failed for event %s "
+            "(key=%s): %s",
+            event_number,
+            message_key,
+            error,
+        )
+
+    else:
+        logger.error(
+            "Kafka delivery failed: %s",
+            error,
+        )
 
 
 def generate_transaction():
     transaction = {
         "transaction_id": str(uuid.uuid4()),
-        "customer_id": f"CUST-{random.randint(1000, 9999)}",
-        "amount": round(random.uniform(100, 5000), 2),
+        "customer_id": (
+            f"CUST-{random.randint(1000, 9999)}"
+        ),
+        "amount": round(
+            random.uniform(1, 5000),
+            2,
+        ),
         "currency": "INR",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "merchant": f"MERCHANT-{random.randint(100, 999)}",
-        "status": random.choice(["SUCCESS", "PENDING", "FAILED"]),
+        "timestamp": datetime.now(
+            timezone.utc
+        ).isoformat(),
+        "merchant": (
+            f"MERCHANT-{random.randint(100, 999)}"
+        ),
+        "status": random.choice(
+            STATUSES
+        ),
     }
 
     if random.random() < NULL_INJECTION_RATE:
-        field = random.choice(list(transaction.keys()))
+        field = random.choice(
+            [
+                "customer_id",
+                "merchant",
+                "status",
+            ]
+        )
+
         transaction[field] = None
 
+
     if random.random() < SCHEMA_CHANGE_RATE:
-        transaction["unexpected_field"] = "SCHEMA_CHANGE"
+        transaction[
+            "unexpected_field"
+        ] = "SCHEMA_CHANGE"
+
 
     if random.random() < BAD_AMOUNT_RATE:
         transaction["amount"] = random.choice(
-            [0, -1, -100, -999.99]
+            [
+                0,
+                -1,
+                -100,
+            ]
         )
 
-    if random.random() < MISSING_FIELD_RATE:
-        required_fields = [
-            "transaction_id",
-            "customer_id",
-            "amount",
-            "currency",
-            "timestamp",
-            "merchant",
-            "status",
-        ]
 
-        field_to_remove = random.choice(required_fields)
-        transaction.pop(field_to_remove, None)
+    if random.random() < MISSING_FIELD_RATE:
+        field = random.choice(
+            [
+                "transaction_id",
+                "customer_id",
+                "amount",
+                "currency",
+                "timestamp",
+                "merchant",
+                "status",
+            ]
+        )
+
+        transaction.pop(
+            field,
+            None,
+        )
+
 
     if random.random() < INVALID_VALUE_RATE:
-        invalid_cases = [
-            ("currency", "INVALID"),
-            ("status", "UNKNOWN"),
-            ("customer_id", ""),
-            ("merchant", ""),
-            ("timestamp", "not-a-date"),
-        ]
+        field, value = random.choice(
+            [
+                ("currency", "INVALID"),
+                ("status", "UNKNOWN"),
+                ("customer_id", ""),
+                ("merchant", ""),
+                ("timestamp", "not-a-date"),
+            ]
+        )
 
-        field, value = random.choice(invalid_cases)
+        transaction[field] = value
 
-        if field in transaction:
-            transaction[field] = value
 
     return transaction
 
 
 def generate_payload():
     if random.random() < MALFORMED_JSON_RATE:
-        return '{"transaction_id": "broken", "amount": '
+        return (
+            '{"transaction_id": "broken", "amount": '
+        )
 
     return generate_transaction()
 
 
-def get_next_transaction(previous_transaction=None):
+def get_next_transaction(
+    previous_transaction=None,
+):
     if (
         previous_transaction is not None
         and random.random() < DUPLICATE_RATE
     ):
-        if isinstance(previous_transaction, dict):
-            return previous_transaction.copy(), True
+        if isinstance(
+            previous_transaction,
+            dict,
+        ):
+            return (
+                previous_transaction.copy(),
+                True,
+            )
 
-        return previous_transaction, True
+        return (
+            previous_transaction,
+            True,
+        )
 
-    return generate_payload(), False
+    return (
+        generate_payload(),
+        False,
+    )
 
 
 def get_message_key(transaction):
-    if isinstance(transaction, dict):
-        return transaction.get("transaction_id")
+    if isinstance(
+        transaction,
+        dict,
+    ):
+        return transaction.get(
+            "transaction_id"
+        )
 
     return None
 
 
+def send_transaction(
+    producer,
+    transaction,
+    event_number,
+):
+    message_key = get_message_key(
+        transaction
+    )
+
+    future = producer.send(
+        KAFKA_TOPIC,
+        key=message_key,
+        value=transaction,
+    )
+
+    future.add_callback(
+        lambda record_metadata:
+        on_send_success(
+            record_metadata,
+            event_number=event_number,
+            message_key=message_key,
+            transaction=transaction,
+        )
+    )
+
+    future.add_errback(
+        lambda error:
+        on_send_error(
+            error,
+            event_number=event_number,
+            message_key=message_key,
+        )
+    )
+
+    return future
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="IceStream Kafka transaction generator"
+        description=(
+            "IceStream Kafka Transaction Generator"
+        )
     )
 
     parser.add_argument(
         "--count",
         type=int,
         default=None,
-        help="Generate a fixed number of events and then stop.",
+        help=(
+            "Number of events to generate. "
+            "Overrides MAX_EVENTS."
+        ),
     )
 
-    args = parser.parse_args()
-
-    if args.count is not None and args.count <= 0:
-        parser.error("--count must be greater than 0")
-
-    return args
+    return parser.parse_args()
 
 
 def main():
     args = parse_arguments()
 
-    max_events = args.count
+    max_events = (
+        args.count
+        if args.count is not None
+        else MAX_EVENTS
+    )
 
-    if max_events is None and MAX_EVENTS > 0:
-        max_events = MAX_EVENTS
+    if max_events < 0:
+        raise ValueError(
+            "--count cannot be negative."
+        )
 
-    print("IceStream Kafka Producer Started")
-    print(f"Kafka Server: {KAFKA_SERVER}")
-    print(f"Kafka Topic: {KAFKA_TOPIC}")
-    print(f"Generation Rate: {GENERATION_RATE} transaction(s)/second")
-    print(f"Duplicate Rate: {DUPLICATE_RATE}")
+    logger.info(
+        "IceStream Kafka Producer Started"
+    )
 
-    if max_events is None:
-        print("Max Events: unlimited")
-    else:
-        print(f"Max Events: {max_events}")
+    logger.info(
+        "Kafka Server: %s",
+        KAFKA_SERVER,
+    )
 
-    producer = create_producer()
-    previous_transaction = None
+    logger.info(
+        "Kafka Topic: %s",
+        KAFKA_TOPIC,
+    )
+
+    logger.info(
+        "Generation Rate: %s transaction(s)/second",
+        GENERATION_RATE,
+    )
+
+    logger.info(
+        "Max Events: %s",
+        max_events if max_events > 0 else "unlimited",
+    )
+
+    producer = None
     event_count = 0
+    previous_transaction = None
 
     try:
-        while max_events is None or event_count < max_events:
-            transaction, is_duplicate = get_next_transaction(
-                previous_transaction
+        producer = create_producer()
+
+        while True:
+            if (
+                max_events > 0
+                and event_count >= max_events
+            ):
+                break
+
+            transaction, is_duplicate = (
+                get_next_transaction(
+                    previous_transaction
+                )
+            )
+
+            event_number = (
+                event_count + 1
             )
 
             if is_duplicate:
-                print("Duplicate generated")
-            else:
-                if isinstance(transaction, dict):
-                    previous_transaction = transaction.copy()
-                else:
-                    previous_transaction = transaction
-
-            message_key = get_message_key(transaction)
-
-            try:
-                producer.send(
-                    KAFKA_TOPIC,
-                    key=message_key,
-                    value=transaction,
-                ).add_callback(
-                    on_send_success
-                ).add_errback(
-                    on_send_error
+                logger.info(
+                    "Generated duplicate event %s",
+                    event_number,
                 )
 
-                event_count += 1
+            send_transaction(
+                producer,
+                transaction,
+                event_number,
+            )
 
-                print(
-                    f"Sent event {event_count}: "
-                    f"key={message_key}, value={transaction}"
-                )
+            previous_transaction = transaction
 
-            except KafkaError as error:
-                print(f"Kafka send error: {error}")
+            event_count += 1
 
-            if max_events is None or event_count < max_events:
-                time.sleep(1 / GENERATION_RATE)
+            if (
+                max_events > 0
+                and event_count >= max_events
+            ):
+                break
+
+            time.sleep(
+                1 / GENERATION_RATE
+            )
 
     except KeyboardInterrupt:
-        print("\nProducer stopped.")
+        logger.info(
+            "Producer stopped by user."
+        )
+
+    except KafkaError as error:
+        logger.error(
+            "Kafka error: %s",
+            error,
+        )
+        raise
+
+    except Exception as error:
+        logger.error(
+            "Unexpected producer error: %s",
+            error,
+        )
+        raise
 
     finally:
-        producer.flush()
-        producer.close()
+        if producer is not None:
+            logger.info(
+                "Waiting for pending Kafka deliveries..."
+            )
 
-    print(f"Producer finished. Total events sent: {event_count}")
+            producer.flush()
+            producer.close()
+
+        logger.info(
+            "Producer finished. "
+            "Total events submitted: %s",
+            event_count,
+        )
 
 
 if __name__ == "__main__":
