@@ -4,7 +4,7 @@ from app.quality.error_rate import calculate_error_rate
 from app.dlq.dlq_producer import send_to_dlq
 from app.circuit_breaker.circuit_breaker import check_circuit
 from app.monitoring.status_producer import create_status
-from app.config import ERROR_RATE_THRESHOLD
+from app.circuit_breaker.thresholds import ERROR_RATE_THRESHOLD
 
 def process_records(records):
     total_records = len(records)
