@@ -32,13 +32,11 @@ class CircuitBreaker:
 
         return self.state
 
-# Keep these functions for existing code compatibility
+# Keep one circuit breaker instance so state is maintained
+circuit = CircuitBreaker()
 
 def check_circuit(error_rate):
-    circuit = CircuitBreaker()
     return circuit.check_circuit(error_rate)
 
 def start_recovery():
-    circuit = CircuitBreaker()
-    circuit.state = OPEN
     return circuit.start_recovery()
