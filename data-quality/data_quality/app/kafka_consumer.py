@@ -19,10 +19,7 @@ def create_consumer():
         bootstrap_servers=KAFKA_SERVER,
         group_id=KAFKA_GROUP_ID,
         auto_offset_reset="earliest",
-        enable_auto_commit=True,
-        value_deserializer=lambda value: json.loads(
-            value.decode("utf-8")
-        ),
+        enable_auto_commit=True
     )
 
 def consume_records():
@@ -31,8 +28,15 @@ def consume_records():
 
     try:
         for message in consumer:
-            # Return the received transaction
-            yield message.value
+            try:
+                if isinstance(message.value, dict):
+                    record = message.value
+
+                else:
+                    recode = json.loads(message.value.decode("utf-8"))
+                yield record
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                print("Malformed JSON message skipped")
 
     finally:
         # Close Kafka consumer
