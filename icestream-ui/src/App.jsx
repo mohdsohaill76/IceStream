@@ -6,6 +6,9 @@ import Dashboard from "./pages/Dashboard";
 import Pipeline from "./pages/Pipeline";
 import DataQuality from "./pages/DataQuality";
 import Incidents from "./pages/Incidents";
+import Snapshots from "./pages/Snapshots";
+import Settings from "./pages/Settings";
+
 
 function App() {
   return (
@@ -40,6 +43,9 @@ function App() {
                 path="/incidents"
                 element={<Incidents />}
               />
+
+              <Route path="/snapshots" element={<Snapshots />} />
+              <Route path="/settings" element={<Settings />} />
 
             </Routes>
 
