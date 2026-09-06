@@ -1,21 +1,21 @@
-
 from app.dlq import dlq_producer
 from app.dlq.incident import create_incident
 
 def test_send_to_dlq(monkeypatch):
-    # Sample invalid transaction
+    # Sample invalid transaction using the current IceStream contract
     record = {
         "transaction_id": "TXN002",
-        "customer_id": "CUST001",
-        "product_id": "PROD001",
-        "quantity": 2,
+        "customer_id": "CUST002",
         "amount": 500,
-        "tax": None
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-102",
+        "status": "UNKNOWN"
     }
 
-    errors = ["tax is missing"]
+    errors = ["status is invalid"]
 
-    # Fake Kafka producer so test does not need Kafka
+    # Fake Kafka producer so the test does not need Kafka
     class FakeProducer:
         def send(self, topic, value):
             self.topic = topic
@@ -39,14 +39,18 @@ def test_send_to_dlq(monkeypatch):
     assert result["errors"] == errors
 
 def test_create_incident():
-    # Sample invalid transaction
+    # Sample invalid transaction using the current IceStream contract
     record = {
         "transaction_id": "TXN002",
+        "customer_id": "CUST002",
         "amount": 500,
-        "tax": None
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-102",
+        "status": "UNKNOWN"
     }
 
-    errors = ["tax is missing"]
+    errors = ["status is invalid"]
 
     result = create_incident(record, errors)
 

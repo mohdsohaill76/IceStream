@@ -1,4 +1,5 @@
 # Control the circuit breaker state
+
 from app.circuit_breaker.states import CLOSED, OPEN, HALF_OPEN
 from app.circuit_breaker.thresholds import ERROR_RATE_THRESHOLD
 
@@ -9,11 +10,15 @@ class CircuitBreaker:
 
     def check_circuit(self, error_rate):
         # Open the circuit when error rate is above 2%
-        if error_rate > ERROR_RATE_THRESHOLD:
-            self.state = OPEN
-        else:
-            self.state = CLOSED
+        if self.state == CLOSED:
+            if error_rate > ERROR_RATE_THRESHOLD:
+                self.state = OPEN
 
+        # Keep the circuit open until recovery is started
+        elif self.state == OPEN:
+            self.state = OPEN
+
+        # HALF_OPEN state is handled by recovery_result()
         return self.state
 
     def start_recovery(self):
@@ -25,10 +30,11 @@ class CircuitBreaker:
 
     def recovery_result(self, recovery_successful):
         # Close the circuit after successful recovery
-        if recovery_successful:
-            self.state = CLOSED
-        else:
-            self.state = OPEN
+        if self.state == HALF_OPEN:
+            if recovery_successful:
+                self.state = CLOSED
+            else:
+                self.state = OPEN
 
         return self.state
 

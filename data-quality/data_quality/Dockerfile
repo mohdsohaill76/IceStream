@@ -13,5 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app ./app
 
+# Copy tests
+COPY tests ./tests
+
 # Run the data quality application
 CMD ["python", "-m", "app.main"]

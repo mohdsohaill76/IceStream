@@ -121,3 +121,54 @@ def test_whitespace_only_ids():
     assert valid is False
     assert "transaction_id cannot be empty" in errors
     assert "customer_id cannot be empty" in errors
+
+def test_whitespace_only_merchant():
+    # Merchant containing only whitespace is invalid
+    record = {
+        "transaction_id": "TXN008",
+        "customer_id": "CUST008",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "   ",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "merchant cannot be empty" in errors
+
+def test_boolean_false_amount_is_rejected():
+    # False must not be accepted as a monetary amount
+    record = {
+        "transaction_id": "TXN009",
+        "customer_id": "CUST009",
+        "amount": False,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-109",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "amount must be a number" in errors
+
+def test_tab_only_merchant_is_rejected():
+    # Whitespace-only merchant must be rejected
+    record = {
+        "transaction_id": "TXN010",
+        "customer_id": "CUST010",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "\t",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "merchant cannot be empty" in errors

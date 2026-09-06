@@ -46,23 +46,25 @@ def process_records(records):
 
 if __name__ == "__main__":
     sample_records = [
-        {
-            "transaction_id": "T001",
-            "customer_id": "C001",
-            "product_id": "P001",
-            "quantity": 2,
-            "amount": 100,
-            "tax": 10
-        },
-        {
-            "transaction_id": "T002",
-            "customer_id": "C002",
-            "product_id": "P002",
-            "quantity": 0,
-            "amount": 200,
-            "tax": 20
-        }
-    ]
+    {
+        "transaction_id": "T001",
+        "customer_id": "C001",
+        "amount": 100,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-001",
+        "status": "SUCCESS"
+    },
+    {
+        "transaction_id": "T002",
+        "customer_id": "C002",
+        "amount": 200,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:01:00Z",
+        "merchant": "MERCHANT-002",
+        "status": "PENDING"
+    }
+]
 
     result = process_records(sample_records)
 

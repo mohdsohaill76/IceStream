@@ -1,8 +1,16 @@
 from datetime import datetime
+
 from app.config import REQUIRED_FIELDS
+from app.quality.schema_validator import validate_schema
 
 def validate_record(record):
     errors = []
+
+    # Validate the transaction structure first
+    schema_valid, schema_errors = validate_schema(record)
+
+    if not schema_valid:
+        errors.extend(schema_errors)
 
     # Check required fields
     for field in REQUIRED_FIELDS:
@@ -19,19 +27,21 @@ def validate_record(record):
 
     # Check amount
     if "amount" in record and record["amount"] is not None:
-        if not isinstance(record["amount"], (int, float)):
+        if isinstance(record["amount"], bool):
+            errors.append("amount must be a number")
+        elif not isinstance(record["amount"], (int, float)):
             errors.append("amount must be a number")
         elif record["amount"] <= 0:
             errors.append("amount must be greater than 0")
 
     # Check currency
     if "currency" in record and record["currency"] is not None:
-       if not isinstance(record["currency"], str) or record["currency"] != "INR":
-        errors.append("currency must be INR")
+        if not isinstance(record["currency"], str) or record["currency"] != "INR":
+            errors.append("currency must be INR")
 
     # Check merchant
     if "merchant" in record and record["merchant"] is not None:
-        if not isinstance(record["merchant"], str) or record["merchant"] == "":
+        if not isinstance(record["merchant"], str) or not record["merchant"].strip():
             errors.append("merchant cannot be empty")
 
     # Check status
@@ -42,7 +52,9 @@ def validate_record(record):
     # Check timestamp
     if "timestamp" in record and record["timestamp"] is not None:
         try:
-            datetime.fromisoformat(record["timestamp"].replace("Z", "+00:00"))
+            datetime.fromisoformat(
+                record["timestamp"].replace("Z", "+00:00")
+            )
         except (ValueError, AttributeError):
             errors.append("timestamp is invalid")
 

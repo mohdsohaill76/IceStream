@@ -1,5 +1,6 @@
 # Test transaction schema validation
 from app.quality.schema_validator import validate_schema
+from app.quality.validator import validate_record
 
 def test_valid_schema():
     # Sample transaction with all required fields
@@ -48,6 +49,24 @@ def test_unexpected_field():
     }
 
     valid, errors = validate_schema(record)
+
+    assert valid is False
+    assert "unexpected_field is not allowed" in errors
+
+def test_unexpected_field_rejected_by_validate_record():
+    # Unexpected fields must be rejected by the main validation path
+    record = {
+        "transaction_id": "TXN006",
+        "customer_id": "CUST006",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-106",
+        "status": "SUCCESS",
+        "unexpected_field": "SCHEMA_CHANGE"
+    }
+
+    valid, errors = validate_record(record)
 
     assert valid is False
     assert "unexpected_field is not allowed" in errors

@@ -57,3 +57,12 @@ def test_half_open_to_open():
     result = circuit.recovery_result(False)
 
     assert result == OPEN
+
+def test_open_circuit_stays_open():
+    # An open circuit must remain open until recovery is started
+    circuit = CircuitBreaker()
+
+    circuit.check_circuit(5.0)
+    result = circuit.check_circuit(0.5)
+
+    assert result == OPEN
