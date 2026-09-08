@@ -45,27 +45,15 @@ def process_records(records):
     }
 
 if __name__ == "__main__":
-    sample_records = [
-    {
-        "transaction_id": "T001",
-        "customer_id": "C001",
-        "amount": 100,
-        "currency": "INR",
-        "timestamp": "2026-09-03T10:00:00Z",
-        "merchant": "MERCHANT-001",
-        "status": "SUCCESS"
-    },
-    {
-        "transaction_id": "T002",
-        "customer_id": "C002",
-        "amount": 200,
-        "currency": "INR",
-        "timestamp": "2026-09-03T10:01:00Z",
-        "merchant": "MERCHANT-002",
-        "status": "PENDING"
-    }
-]
+    from app.kafka_consumer import consume_records
 
-    result = process_records(sample_records)
+    print("IceStream Data Quality Service Started")
+    print("Waiting for Kafka messages...")
 
-    print(result)
+    try:
+        for record in consume_records():
+            result = process_records([record])
+            print(result)
+
+    except KeyboardInterrupt:
+        print("\nData Quality Service stopped.")
