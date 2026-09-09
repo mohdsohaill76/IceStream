@@ -17,4 +17,4 @@ COPY app ./app
 COPY tests ./tests
 
 # Run the data quality application
-CMD ["python", "-m", "app.main"]
+CMD ["python", "-u", "-m", "app.main"]
