@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 
 from app.config import REQUIRED_FIELDS
@@ -31,6 +32,8 @@ def validate_record(record):
             errors.append("amount must be a number")
         elif not isinstance(record["amount"], (int, float)):
             errors.append("amount must be a number")
+        elif not math.isfinite(record["amount"]):
+            errors.append("amount must be finite")
         elif record["amount"] <= 0:
             errors.append("amount must be greater than 0")
 

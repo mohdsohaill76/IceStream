@@ -172,3 +172,51 @@ def test_tab_only_merchant_is_rejected():
 
     assert valid is False
     assert "merchant cannot be empty" in errors
+
+def test_nan_amount_is_rejected():
+    record = {
+        "transaction_id": "TXN011",
+        "customer_id": "CUST011",
+        "amount": float("nan"),
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-111",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "amount must be finite" in errors
+
+def test_positive_infinity_amount_is_rejected():
+    record = {
+        "transaction_id": "TXN012",
+        "customer_id": "CUST012",
+        "amount": float("inf"),
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-112",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "amount must be finite" in errors
+
+def test_negative_infinity_amount_is_rejected():
+    record = {
+        "transaction_id": "TXN013",
+        "customer_id": "CUST013",
+        "amount": float("-inf"),
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-113",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "amount must be finite" in errors
