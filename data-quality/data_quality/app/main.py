@@ -50,10 +50,25 @@ if __name__ == "__main__":
     print("IceStream Data Quality Service Started")
     print("Waiting for Kafka messages...")
 
+    BATCH_SIZE = 100
+    batch = []
+
     try:
         for record in consume_records():
-            result = process_records([record])
-            print(result)
+            batch.append(record)
+
+            # Process records in batches of 100
+            if len(batch) >= BATCH_SIZE:
+                result = process_records(batch)
+                print(result)
+
+                # Start a fresh batch
+                batch = []
 
     except KeyboardInterrupt:
+        # Process remaining records before stopping
+        if batch:
+            result = process_records(batch)
+            print(result)
+
         print("\nData Quality Service stopped.")
