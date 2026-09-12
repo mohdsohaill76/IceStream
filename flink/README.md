@@ -1,51 +1,66 @@
 # Flink Stream Processing Module
 
 ## Responsibility
-The `flink` module handles real-time stream processing, consuming raw events from Apache Kafka, performing transformations and aggregations, and preparing the processed streams for lakehouse storage in Apache Iceberg.
+The `flink` module handles real-time stream processing, consuming raw events from Apache Kafka, performing validation and stateful deduplication, and routing clean streams for downstream lakehouse storage and data quality analysis.
 
 ## Module Owner
 **Person 3: Flink Stream Processing**
 
 ## Key Features & Pipeline Implementation
-- **Kafka Source (`jobs/kafka_consumer.py`)**: Consumes raw transaction streams from `ecommerce-transactions` via `KafkaSource`.
-- **JSON Parsing & Validation (`src/transforms.py`)**: Parses incoming string messages into JSON, validates required fields (`transaction_id`, `user_id`, `amount`, `currency`, `timestamp`), and checks data types without crashing the job.
-- **Event-Time & Watermarking**: Assigns event timestamps from payloads and applies a 5-second Bounded Out-of-Orderness watermark strategy.
-- **Stateful Deduplication**: Uses Flink Keyed `ValueState` with a 24-hour State TTL (`set_state_visibility`, `set_update_type`) to drop duplicate `transaction_id` records.
-- **Fault Tolerance & Checkpointing**: Configured with 10-second Exactly-Once checkpointing and a 3-attempt fixed-delay restart strategy.
+- **Kafka Source (`jobs/kafka_consumer.py`)**: Consumes raw transaction streams from `ecommerce-transactions` using `KafkaSource`.
+- **Upstream Contract Compliance (`src/transforms.py`)**: Parses incoming string messages into JSON and validates required fields (`transaction_id`, `customer_id`, `amount`, `currency`, `timestamp`), cleanly handling missing keys and malformed payloads.
+- **Event-Time & Watermarking**: Assigns event timestamps from payloads using `RawTransactionTimestampAssigner` with a 5-second Bounded Out-of-Orderness watermark strategy.
+- **Stateful Deduplication**: Uses Flink Keyed `ValueState` to detect duplicate `transaction_id` records across execution streams.
+- **Side Outputs & Raw Payload Preservation**: Employs Flink `OutputTag` side outputs to isolate valid records from dead-letter queue (DLQ) records while preserving exact un-mutated `raw_payload` strings for auditability.
+- **Fault Tolerance & Checkpointing**: Configured with 10-second Exactly-Once checkpointing backed by `FileSystemCheckpointStorage` (`file:///tmp/flink-checkpoints`) and fixed-delay restarts.
 - **Dual Kafka Outputs**:
-  - Valid events → `processed-transactions` (for Person 4 Iceberg Sink & Person 5 Data Quality)
-  - Invalid / Duplicate events → `transactions-dlq` (for Person 5 Data Quality & Monitoring)
-- **Metrics & Backend Status API Integration**: Exposes live counters (`records_processed_count`, `records_invalid_count`, `records_duplicate_count`) and provides status contracts for Person 1's Backend Status API (`GET /api/v1/pipeline/status`).
-- **Automated & Integration Testing**: Unit coverage via `pytest` (`tests/`) and end-to-end integration test flow (`test_flow.py`).
+  - Valid events → `processed-transactions` (for Downstream Data Quality & Iceberg Ingestion)
+  - Invalid / Duplicate events → `transactions-dlq` (for Audit Logging & Monitoring)
+- **Externalized Configuration**: Externalizes topics, parallelism, and bootstrap servers via environment variables (`CONFIG`).
+- **Metrics & Backend Status API Integration**: Provides contract status definitions (`get_flink_module_status`) and metric key definitions for FastAPI backend status monitoring.
+- **Automated Testing & Automated Setup**: Full unit coverage via `pytest` (`tests/`) and automated JAR provisioning (`lib/download_kafka_jar.py`).
+
+---
+
+## Data Lineage & Downstream Integration
+
+1. **Upstream Producer (Mahek - Data Generator)**: Writes raw JSON payloads to `ecommerce-transactions`.
+2. **Flink Pipeline Engine**: Consumes from `ecommerce-transactions`, validates schema, deduplicates records via `ValueState`, and routes streams.
+3. **Downstream Sink (Harsh - Data Quality / Iceberg)**: Consumes clean events from `processed-transactions` and failure logs from `transactions-dlq`.
+
+*(For complete contract details, see `DOWNSTREAM_INTEGRATION.md`)*
 
 ---
 
 ## Output JSON Schemas
 
 ### 1. Valid Transaction Schema (`processed-transactions`)
-*Consumed by Person 4 (Iceberg Sink) and Person 5 (Data Quality)*
+*Consumed downstream by Data Quality and Iceberg Ingestion*
 
 ```json
 {
   "transaction_id": "tx_987654",
-  "user_id": "usr_102",
+  "customer_id": "cust_102",
   "amount": 149.99,
   "currency": "USD",
-  "timestamp": "2026-08-31T12:00:00Z",
-  "event_timestamp_ms": 1788177600000,
-  "processed_at": "2026-08-31T12:00:01.123456+00:00"
+  "timestamp": "2026-09-12T12:00:00Z"
 }
 ```
 
 ### 2. Dead Letter Queue Schema (`transactions-dlq`)
-*Consumed by Person 5 (Data Quality & Monitoring)*
+*Consumed downstream by Data Quality & Audit Monitoring*
 
 ```json
 {
-  "raw_payload": "{\"transaction_id\": \"tx_999\", \"amount\": -25.0}",
-  "error_reason": "Invalid amount: must be positive (> 0)",
-  "transaction_id": "tx_999",
-  "failed_at": "2026-08-31T12:00:01.123456+00:00"
+  "raw_payload": "{\"transaction_id\": \"tx_999\", \"user_id\": \"usr_102\", \"amount\": -25.0}",
+  "error_reason": "Invalid transaction amount: -25.0 (Must be > 0)"
+}
+```
+
+```json
+{
+  "raw_payload": "{\"transaction_id\": \"tx_legacy_001\", \"user_id\": \"usr_99\", \"amount\": 50.0}",
+  "error_reason": "Schema Validation Failure: Missing fields ['customer_id']"
 }
 ```
 
@@ -53,12 +68,7 @@ The `flink` module handles real-time stream processing, consuming raw events fro
 
 ## Health & Metrics Contract Integration (Person 1)
 
-The job tracks state metrics via Flink's runtime metric group:
-- `records_processed_count`: Total valid unique transactions processed.
-- `records_invalid_count`: Total malformed, missing field, or invalid records sent to DLQ.
-- `records_duplicate_count`: Total duplicate transaction IDs filtered to DLQ.
-
-Dynamic contract response format for status API integration:
+Dynamic status contract exposed for backend API aggregation (`GET /api/v1/pipeline/status`):
 ```json
 {
   "module": "flink",
@@ -80,82 +90,44 @@ Dynamic contract response format for status API integration:
 
 ---
 
-## Prerequisites & Dependencies
+## Prerequisites & Setup
 
-- **Python Runtime**: Python 3.10 or Python 3.11 (`apache-flink==1.18.1`).
-- **Java Runtime**: OpenJDK 11 or OpenJDK 17 (Java 11 recommended). Ensure `JAVA_HOME` environment variable is set.
-- **Kafka Connector JAR**: `flink-sql-connector-kafka-3.0.1-1.18.jar` placed inside `flink/lib/`.
-- **Message Broker**: Apache Kafka running on `localhost:9092`.
+- **Python Runtime**: Python 3.10 or Python 3.11 (`apache-flink==1.18.0`).
+- **Java Runtime**: OpenJDK 11 or 17 with `JAVA_HOME` properly configured.
+- **Kafka Connector JAR**: Automated via `lib/download_kafka_jar.py` or manually placed in `lib/flink-sql-connector-kafka-3.0.1-1.18.jar`.
+- **Message Broker**: Apache Kafka running on `localhost:9092` (or configured via environment variables).
 
 ---
 
-## Quick Start & Execution
+## Execution Steps
 
-### 1. Set Up Virtual Environment (Python 3.11)
-```bash
+### 1. Environment Setup
+```powershell
 # Navigate to the flink module directory
 cd flink
 
-# Create virtual environment using Python 3.11
-py -3.11 -m venv venv
-
-# Activate virtual environment (Windows PowerShell)
+# Activate your virtual environment
 .\venv\Scripts\Activate.ps1
-```
 
-### 2. Install Dependencies
-```bash
-pip install --upgrade pip
+# Install dependencies
 pip install -r requirements.txt
 ```
 
+### 2. Provision Dependencies & Connector JARs
+Automatically fetch required Maven connector binaries:
+```powershell
+python lib/download_kafka_jar.py
+```
+
 ### 3. Run Automated Unit Tests
-```bash
-python -m pytest tests
+Verify pipeline transforms, schema validation, DLQ routing, and Flink `ValueState` deduplication:
+```powershell
+pytest tests/
 ```
 
-### 4. Run the Flink Kafka Consumer Job
-```bash
+### 4. Execute Flink Streaming Job
+```powershell
 python jobs/kafka_consumer.py
-```
-
----
-
-## Live End-to-End Integration Testing
-
-### 1. Verification Steps
-
-1. **Verify Kafka Broker Connectivity**:
-   ```powershell
-   Test-NetConnection -ComputerName localhost -Port 9092
-   ```
-   *(Ensure `TcpTestSucceeded : True` is returned).*
-
-2. **Start the Flink Processing Engine (Terminal 1)**:
-   ```powershell
-   python jobs/kafka_consumer.py
-   ```
-   *Keep this window open to allow Flink to continuously consume events.*
-
-3. **Execute Live Integration Test Suite (Terminal 2)**:
-   ```powershell
-   python test_flow.py
-   ```
-
-### 2. Live Verification Results
-
-End-to-end integration test output confirming live parsing, validation, enrichment, stateful deduplication, and dual-sink Kafka output routing:
-
-```text
---- 1. Sending Test Events ---
-Test events dispatched to Kafka.
-
---- 2. Checking 'processed-transactions' (Valid Sink) ---
-RECEIVED VALID: {"transaction_id": "tx_valid_100", "user_id": "usr_55", "amount": 199.99, "currency": "USD", "timestamp": "2026-08-31T14:55:00Z", "event_timestamp_ms": 1788188100000, "processed_at": "2026-08-31T10:44:16.205483+00:00"}
-
---- 3. Checking 'transactions-dlq' (DLQ Sink) ---
-RECEIVED DLQ: {"raw_payload": "{\"transaction_id\": \"tx_invalid_200\", \"user_id\": \"usr_56\", \"amount\": -50.0, \"currency\": \"USD\", \"timestamp\": \"2026-08-31T14:55:00Z\"}", "error_reason": "Invalid amount: must be positive (> 0)", "transaction_id": "tx_invalid_200", "failed_at": "2026-08-31T10:44:16.205483+00:00"}
-RECEIVED DLQ: {"raw_payload": "{\"transaction_id\": \"tx_valid_100\", \"user_id\": \"usr_55\", \"amount\": 199.99, \"currency\": \"USD\", \"timestamp\": \"2026-08-31T14:55:00Z\", \"event_timestamp_ms\": 1788188100000, "processed_at": "2026-08-31T10:44:16.205483+00:00\"}", "error_reason": "Duplicate transaction_id detected", "transaction_id": "tx_valid_100", "failed_at": "2026-08-31T10:44:17.316149+00:00"}
 ```
 
 ---
@@ -164,17 +136,19 @@ RECEIVED DLQ: {"raw_payload": "{\"transaction_id\": \"tx_valid_100\", \"user_id\
 
 ```text
 flink/
+├── DOWNSTREAM_INTEGRATION.md  # Topic contracts & stream lineage documentation
 ├── jobs/
-│   └── kafka_consumer.py      # Primary Flink streaming job execution entrypoint
+│   └── kafka_consumer.py      # Main PyFlink execution job & streaming DAG setup
 ├── lib/
-│   └── flink-sql-connector-kafka-3.0.1-1.18.jar # Flink-Kafka connector dependency
+│   ├── download_kafka_jar.py  # Automated Maven JAR dependency downloader
+│   └── flink-sql-connector-kafka-3.0.1-1.18.jar # Kafka connector JAR
 ├── src/
 │   ├── __init__.py
-│   └── transforms.py          # JSON parsing, validation, watermarking & stateful deduplication
+│   └── transforms.py          # KeyedProcessFunction, validation, DLQ side outputs
 ├── tests/
 │   ├── __init__.py
-│   └── test_flink_pipeline.py # Unit tests for parsing, DLQ routing, state & metrics
-├── test_flow.py               # Live end-to-end integration test producer/consumer script
-├── README.md                  # Comprehensive module documentation
-└── requirements.txt           # PyFlink, pytest, and connector dependencies
+│   └── test_flink_pipeline.py # Unit tests for customer_id, DLQ routing, and state
+├── test_flow.py               # E2E integration testing producer/consumer script
+├── README.md                  # Complete module documentation
+└── requirements.txt           # Pinned PyFlink, pytest, and connector dependencies
 ```

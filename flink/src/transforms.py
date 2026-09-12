@@ -47,19 +47,23 @@ class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
         if self.seen_state.value():
             logger.info(f"Duplicate transaction detected for ID: {tx_id}")
             dlq_payload = json.dumps({
-                "raw_payload": value,  # FIXED: Preserves exact raw string, preventing double-encoding
+                "raw_payload": value,
                 "error_reason": f"Duplicate transaction_id: {tx_id}"
             })
             yield DLQ_OUTPUT_TAG, dlq_payload
             return
 
         # 3. Data Integrity & Schema Validation
-        required_fields = ["transaction_id", "user_id", "amount", "currency", "timestamp"]
+        # Normalize user_id / customer_id field names to prevent schema contract failures
+        if "user_id" in data and "customer_id" not in data:
+            data["customer_id"] = data["user_id"]
+
+        required_fields = ["transaction_id", "customer_id", "amount", "currency", "timestamp"]
         missing_fields = [f for f in required_fields if f not in data or data[f] is None]
 
         if missing_fields:
             dlq_payload = json.dumps({
-                "raw_payload": value,  # FIXED
+                "raw_payload": value,
                 "error_reason": f"Schema Validation Failure: Missing fields {missing_fields}"
             })
             yield DLQ_OUTPUT_TAG, dlq_payload
@@ -70,14 +74,14 @@ class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
             amount = float(data["amount"])
             if amount <= 0:
                 dlq_payload = json.dumps({
-                    "raw_payload": value,  # FIXED
+                    "raw_payload": value,
                     "error_reason": f"Invalid transaction amount: {amount} (Must be > 0)"
                 })
                 yield DLQ_OUTPUT_TAG, dlq_payload
                 return
         except (ValueError, TypeError):
             dlq_payload = json.dumps({
-                "raw_payload": value,  # FIXED
+                "raw_payload": value,
                 "error_reason": f"Invalid amount type: {data.get('amount')}"
             })
             yield DLQ_OUTPUT_TAG, dlq_payload
