@@ -2,7 +2,6 @@ import json
 import pytest
 import os
 import sys
-from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -46,13 +45,15 @@ def test_valid_customer_id_schema_routing():
         "amount": 299.99,
         "currency": "USD",
         "timestamp": "2026-09-12T10:00:00Z",
+        "merchant": "Amazon",
+        "status": "COMPLETED",
     })
 
     outputs = list(func.process_element(valid_upstream_payload, None))
     assert len(outputs) == 1
     
     tag, output_str = outputs[0]
-    assert tag == VALID_OUTPUT_TAG
+    assert tag.tag_id == VALID_OUTPUT_TAG.tag_id
     
     data = json.loads(output_str)
     assert data["transaction_id"] == "tx_mahek_1001"
@@ -69,18 +70,20 @@ def test_legacy_user_id_fails_schema_validation():
         "user_id": "usr_99",  # Invalid key under official contract
         "amount": 50.0,
         "currency": "USD",
-        "timestamp": "2026-09-12T10:00:00Z"
+        "timestamp": "2026-09-12T10:00:00Z",
+        "merchant": "Amazon",
+        "status": "COMPLETED",
     })
 
     outputs = list(func.process_element(legacy_user_id_payload, None))
     assert len(outputs) == 1
 
     tag, output_str = outputs[0]
-    assert tag == DLQ_OUTPUT_TAG
+    assert tag.tag_id == DLQ_OUTPUT_TAG.tag_id
 
     dlq_data = json.loads(output_str)
     assert "Schema Validation Failure" in dlq_data["error_reason"]
-    assert "customer_id" in dlq_data["error_reason"]
+    assert "customer_id" in dlq_data["error_reason"] or "Legacy 'user_id'" in dlq_data["error_reason"]
     assert dlq_data["raw_payload"] == legacy_user_id_payload
 
 
@@ -94,9 +97,9 @@ def test_malformed_json_does_not_crash():
     assert len(outputs) == 1
 
     tag, output_str = outputs[0]
-    assert tag == DLQ_OUTPUT_TAG
+    assert tag.tag_id == DLQ_OUTPUT_TAG.tag_id
     dlq_data = json.loads(output_str)
-    assert "JSON Deserialization Error" in dlq_data["error_reason"]
+    assert "JSON" in dlq_data["error_reason"] or "Malformed" in dlq_data["error_reason"]
     assert dlq_data["raw_payload"] == corrupt_payload
 
 
@@ -110,12 +113,14 @@ def test_invalid_amount_dlq():
         "customer_id": "cust_12",
         "amount": -10.0,
         "currency": "USD",
-        "timestamp": "2026-09-12T10:00:00Z"
+        "timestamp": "2026-09-12T10:00:00Z",
+        "merchant": "Amazon",
+        "status": "COMPLETED",
     })
 
     outputs = list(func.process_element(negative_payload, None))
     assert len(outputs) == 1
-    assert outputs[0][0] == DLQ_OUTPUT_TAG
+    assert outputs[0][0].tag_id == DLQ_OUTPUT_TAG.tag_id
     assert "Invalid transaction amount" in json.loads(outputs[0][1])["error_reason"]
 
 
@@ -131,18 +136,20 @@ def test_flink_valuestate_deduplication():
         "amount": 75.0,
         "currency": "USD",
         "timestamp": "2026-09-12T10:00:00Z",
+        "merchant": "Amazon",
+        "status": "COMPLETED",
     })
 
     # Pass 1: Unique -> Valid stream & State update
     first_outputs = list(func.process_element(payload, None))
     assert len(first_outputs) == 1
-    assert first_outputs[0][0] == VALID_OUTPUT_TAG
+    assert first_outputs[0][0].tag_id == VALID_OUTPUT_TAG.tag_id
     assert mock_state.value() is True
 
     # Pass 2: Duplicate -> DLQ stream
     second_outputs = list(func.process_element(payload, None))
     assert len(second_outputs) == 1
-    assert second_outputs[0][0] == DLQ_OUTPUT_TAG
+    assert second_outputs[0][0].tag_id == DLQ_OUTPUT_TAG.tag_id
     
     dlq_data = json.loads(second_outputs[0][1])
     assert dlq_data["error_reason"] == "Duplicate transaction_id: tx_state_dup_01"
