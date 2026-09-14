@@ -4,6 +4,10 @@ from app.config import REQUIRED_FIELDS
 def validate_schema(record):
     errors = []
 
+    # Record must be a dictionary/object
+    if not isinstance(record, dict):
+        return False, ["record must be a transaction object"]
+
     # Check required fields
     for field in REQUIRED_FIELDS:
         if field not in record:

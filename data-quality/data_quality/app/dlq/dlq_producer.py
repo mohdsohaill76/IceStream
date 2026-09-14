@@ -17,21 +17,41 @@ def create_dlq_producer():
         value_serializer=lambda value: json.dumps(value).encode("utf-8")
     )
 
-def send_to_dlq(record, errors):
+def get_dlq_producer():
+    # Reuse one producer for the lifetime of the service
     global producer
 
-    # Create a DLQ record
+    if producer is None:
+        producer = create_dlq_producer()
+
+    return producer
+
+def send_to_dlq(record, errors):
+    # Create the DLQ record
     dlq_record = {
         "record": record,
         "errors": errors
     }
 
-    # Create the producer only once
-    if producer is None:
-        producer = create_dlq_producer()
-
-    # Reuse the same producer
-    producer.send(DLQ_TOPIC, value=dlq_record)
-    producer.flush()
+    # Send asynchronously to Kafka.
+    # Flush is intentionally not called for every record.
+    get_dlq_producer().send(
+        DLQ_TOPIC,
+        value=dlq_record
+    )
 
     return dlq_record
+
+def flush_dlq():
+    # Flush all pending DLQ messages at batch/shutdown boundaries
+    if producer is not None:
+        producer.flush()
+
+def close_dlq_producer():
+    # Flush and close the producer during shutdown
+    global producer
+
+    if producer is not None:
+        producer.flush()
+        producer.close()
+        producer = None
