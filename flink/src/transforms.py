@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from pyflink.common import Time
 from pyflink.common.typeinfo import Types
 from pyflink.datastream import RuntimeContext
@@ -22,32 +23,75 @@ CANONICAL_SCHEMA_FIELDS = {
     "status": str,
 }
 
+ALLOWED_CURRENCIES = {"USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR"}
+ALLOWED_STATUSES = {"COMPLETED", "PENDING", "FAILED", "CANCELLED"}
 
-def validate_transaction_schema(data: dict) -> tuple[bool, str]:
-    # 1. Reject legacy user_id without customer_id (No silent conversion)
-    if "user_id" in data and "customer_id" not in data:
-        return False, "Schema Validation Failure: Legacy 'user_id' provided without required 'customer_id'"
 
-    # 2. Check for missing required fields from canonical contract
+def validate_transaction_schema(data: dict) -> tuple[bool, str, dict]:
+    """
+    Validates canonical fields, checks enums, rejects boolean amounts, 
+    verifies ISO-8601 timestamps, and constructs a clean, leak-free canonical record.
+    """
+    # 1. Reject any legacy user_id to avoid leakage (even if customer_id is present)
+    if "user_id" in data:
+        return False, "Schema Validation Failure: Legacy 'user_id' field is forbidden in canonical stream", {}
+
+    # 2. Check for missing required canonical fields
     missing_fields = [f for f in CANONICAL_SCHEMA_FIELDS if f not in data or data[f] is None]
     if missing_fields:
-        return False, f"Schema Validation Failure: Missing required fields {missing_fields}"
+        return False, f"Schema Validation Failure: Missing required fields {missing_fields}", {}
 
-    # 3. Check for unexpected fields according to agreed contract
-    unexpected_fields = [k for k in data if k not in CANONICAL_SCHEMA_FIELDS and k != "user_id"]
+    # 3. Reject unexpected fields
+    unexpected_fields = [k for k in data.keys() if k not in CANONICAL_SCHEMA_FIELDS]
     if unexpected_fields:
-        return False, f"Schema Validation Failure: Unexpected fields detected {unexpected_fields}"
+        return False, f"Schema Validation Failure: Unexpected fields detected {unexpected_fields}", {}
 
-    # 4. Check data types
+    # 4. Data Type Checks & Reject Boolean amounts (bool inherits from int in Python)
     for field, expected_type in CANONICAL_SCHEMA_FIELDS.items():
-        if not isinstance(data[field], expected_type):
-            return False, f"Schema Validation Failure: Field '{field}' expected {expected_type}, got {type(data[field]).__name__}"
+        val = data[field]
+        if field == "amount" and isinstance(val, bool):
+            return False, "Invalid transaction amount: Boolean values (True/False) are not allowed", {}
+        if not isinstance(val, expected_type):
+            return False, f"Schema Validation Failure: Field '{field}' expected {expected_type}, got {type(val).__name__}", {}
 
-    # 5. Check business rules (amount must be positive)
-    if data["amount"] <= 0:
-        return False, f"Invalid transaction amount: {data['amount']} (must be positive)"
+    # 5. String sanity (no empty/whitespace strings)
+    for str_field in ["transaction_id", "customer_id", "merchant"]:
+        if not str(data[str_field]).strip():
+            return False, f"Schema Validation Failure: Field '{str_field}' cannot be empty or whitespace", {}
 
-    return True, ""
+    # 6. Numeric business rule
+    amount = data["amount"]
+    if amount <= 0:
+        return False, f"Invalid transaction amount: {amount} (must be positive)", {}
+
+    # 7. Currency and Status validations
+    currency = str(data["currency"]).strip().upper()
+    if currency not in ALLOWED_CURRENCIES:
+        return False, f"Invalid currency code: '{data['currency']}' (allowed: {sorted(list(ALLOWED_CURRENCIES))})", {}
+
+    status = str(data["status"]).strip().upper()
+    if status not in ALLOWED_STATUSES:
+        return False, f"Invalid status: '{data['status']}' (allowed: {sorted(list(ALLOWED_STATUSES))})", {}
+
+    # 8. Strict ISO-8601 Timestamp Validation
+    raw_ts = str(data["timestamp"]).strip()
+    try:
+        datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+    except Exception as e:
+        return False, f"Invalid timestamp format '{raw_ts}': {str(e)}", {}
+
+    # 9. Build strictly canonical payload (guarantees zero extra fields leak downstream)
+    clean_record = {
+        "transaction_id": str(data["transaction_id"]).strip(),
+        "customer_id": str(data["customer_id"]).strip(),
+        "amount": float(amount),
+        "currency": currency,
+        "timestamp": raw_ts,
+        "merchant": str(data["merchant"]).strip(),
+        "status": status,
+    }
+
+    return True, "", clean_record
 
 
 class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
@@ -87,7 +131,7 @@ class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
             yield DLQ_OUTPUT_TAG, dlq_payload
             return
 
-        tx_id = data.get("transaction_id") or "UNKNOWN"
+        tx_id = str(data.get("transaction_id", "")).strip() or "UNKNOWN"
 
         # 2. Keyed State Deduplication Check
         if self.seen_state.value():
@@ -100,7 +144,7 @@ class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
             return
 
         # 3. Strict Schema & Contract Validation
-        is_valid, error_reason = validate_transaction_schema(data)
+        is_valid, error_reason, clean_record = validate_transaction_schema(data)
         if not is_valid:
             dlq_payload = json.dumps({
                 "raw_payload": value,
@@ -112,5 +156,5 @@ class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
         # 4. Mark Transaction Key as Seen in State
         self.seen_state.update(True)
 
-        # 5. Route Valid Record
-        yield VALID_OUTPUT_TAG, value
+        # 5. Route strictly clean canonical Record
+        yield VALID_OUTPUT_TAG, json.dumps(clean_record)

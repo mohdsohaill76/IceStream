@@ -3,6 +3,9 @@ import sys
 import json
 import logging
 from datetime import datetime
+from dotenv import load_dotenv, find_dotenv
+
+# PyFlink Imports
 from pyflink.common import WatermarkStrategy, Duration, Types
 from pyflink.common.watermark_strategy import TimestampAssigner
 from pyflink.common.restart_strategy import RestartStrategies
@@ -29,23 +32,33 @@ from src.transforms import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("FlinkKafkaConsumer")
 
-# --- ITEM 12: Externalized Configuration Constants ---
+# Load environment configuration from .env file
+load_dotenv(find_dotenv())
+
+def get_checkpoint_uri(raw_path: str) -> str:
+    """Ensures checkpoint path is formatted as a valid file URI for PyFlink."""
+    if raw_path.startswith("file://") or raw_path.startswith("hdfs://") or raw_path.startswith("s3://"):
+        return raw_path
+    abs_path = os.path.abspath(raw_path).replace("\\", "/")
+    return f"file:///{abs_path}"
+
+# Externalized Configuration (QA Blockers 5 & 6)
 CONFIG = {
     "job_name": "IceStream-Flink-Kafka-Consumer",
-    "bootstrap_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
+    "bootstrap_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", os.getenv("KAFKA_BROKER", "localhost:9092")),
     "input_topic": os.getenv("KAFKA_INPUT_TOPIC", "ecommerce-transactions"),
     "valid_output_topic": os.getenv("KAFKA_VALID_TOPIC", "processed-transactions"),
     "dlq_output_topic": os.getenv("KAFKA_DLQ_TOPIC", "transactions-dlq"),
     "consumer_group": os.getenv("KAFKA_CONSUMER_GROUP", "flink_ecommerce_group"),
+    "checkpoint_dir": get_checkpoint_uri(os.getenv("FLINK_CHECKPOINT_DIR", "file:///tmp/flink-checkpoints")),
     "parallelism": int(os.getenv("FLINK_PARALLELISM", "1")),
-    "checkpoint_interval_ms": 10000,
-    "max_out_of_orderness_sec": 5,
+    "checkpoint_interval_ms": int(os.getenv("FLINK_CHECKPOINT_INTERVAL_MS", "10000")),
+    "max_out_of_orderness_sec": int(os.getenv("FLINK_MAX_OUT_OF_ORDERNESS_SEC", "5")),
 }
 
 
 class RawTransactionTimestampAssigner(TimestampAssigner):
-    """Extracts event timestamp from raw JSON for Flink event-time processing and watermarking."""
-
+    """Extracts event timestamp for watermarks from ISO-8601 strings."""
     def extract_timestamp(self, value_json_str: str, record_timestamp: int) -> int:
         try:
             record = json.loads(value_json_str)
@@ -60,20 +73,20 @@ class RawTransactionTimestampAssigner(TimestampAssigner):
 
 
 def safe_extract_tx_id(value_str: str) -> str:
-    """Safely extracts transaction_id for key_by, defaulting to 'UNKNOWN' for malformed payloads."""
+    """Safely extracts transaction_id for key_by."""
     try:
         data = json.loads(value_str)
         if isinstance(data, dict):
             tx_id = data.get("transaction_id")
             if tx_id is not None and str(tx_id).strip() != "":
-                return str(tx_id)
+                return str(tx_id).strip()
     except Exception:
         pass
     return "UNKNOWN"
 
 
 def get_flink_module_status(job_name: str, status: str = "HEALTHY") -> dict:
-    """Dynamic contract payload integrated with Person 1's Backend Pipeline Status API."""
+    """Dynamic status contract payload for Pipeline Status API."""
     return {
         "module": "flink",
         "status": status,
@@ -94,7 +107,7 @@ def get_flink_module_status(job_name: str, status: str = "HEALTHY") -> dict:
 
 def run_flink_job():
     job_name = CONFIG["job_name"]
-    logger.info(f"Initializing Flink Engine with contract: {get_flink_module_status(job_name)}")
+    logger.info(f"Initializing Flink Engine with configuration: {CONFIG}")
 
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_parallelism(CONFIG["parallelism"])
@@ -114,20 +127,21 @@ def run_flink_job():
         env.add_jars(formatted_path)
         logger.info(f"Loaded Kafka Connector JAR: {formatted_path}")
     else:
-        logger.warning(f"Kafka JAR not found at: {jar_path}. Pipeline execution may fail on Kafka sources/sinks.")
+        logger.warning(
+            f"Kafka connector JAR not found at: {jar_path}. "
+            f"Please run 'python lib/download_kafka_jar.py' before running this job."
+        )
 
-    # 2. Checkpointing, Fault Tolerance & Persistent State Storage Configuration (Item 10)
+    # 2. Configurable Checkpointing Storage & Fault Tolerance
     env.enable_checkpointing(CONFIG["checkpoint_interval_ms"], CheckpointingMode.EXACTLY_ONCE)
-    
-    # FIX: Wrapped string path in FileSystemCheckpointStorage object required by PyFlink
     env.get_checkpoint_config().set_checkpoint_storage(
-        FileSystemCheckpointStorage("file:///tmp/flink-checkpoints")
+        FileSystemCheckpointStorage(CONFIG["checkpoint_dir"])
     )
     
     env.set_restart_strategy(
         RestartStrategies.fixed_delay_restart(
             restart_attempts=3,
-            delay_between_attempts=10000,  # 10s delay
+            delay_between_attempts=10000,
         )
     )
 
@@ -147,7 +161,7 @@ def run_flink_job():
         "Kafka_Ecommerce_Source",
     )
 
-    # 4. Event-Time & Watermark Strategy (Bounded Out-of-Orderness)
+    # 4. Watermark Strategy (Bounded Out-of-Orderness)
     watermark_strategy = (
         WatermarkStrategy.for_bounded_out_of_orderness(Duration.of_seconds(CONFIG["max_out_of_orderness_sec"]))
         .with_timestamp_assigner(RawTransactionTimestampAssigner())
@@ -161,11 +175,11 @@ def run_flink_job():
         key_type=Types.STRING(),
     ).process(TransactionValidationAndDeduplicationFunction(), output_type=Types.STRING())
 
-    # Extract Side Outputs (Valid vs DLQ streams)
+    # Extract Side Outputs
     valid_stream = processed_stream.get_side_output(VALID_OUTPUT_TAG)
     dlq_stream = processed_stream.get_side_output(DLQ_OUTPUT_TAG)
 
-    # 6. Configure Kafka Sinks using externalized configurations
+    # 6. Sinks
     valid_kafka_sink = (
         KafkaSink.builder()
         .set_bootstrap_servers(CONFIG["bootstrap_servers"])
@@ -190,11 +204,10 @@ def run_flink_job():
         .build()
     )
 
-    # Attach Sinks to Side Outputs
     valid_stream.sink_to(valid_kafka_sink)
     dlq_stream.sink_to(dlq_kafka_sink)
 
-    logger.info("Starting IceStream Flink Consumer Execution with Side Outputs...")
+    logger.info("Starting IceStream Flink Consumer Execution...")
     env.execute(job_name)
 
 
