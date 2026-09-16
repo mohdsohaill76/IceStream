@@ -1,7 +1,20 @@
-
 # Process transactions through validation, DLQ, circuit breaker, and monitoring
 
+import sys
 import time
+
+# Use UTF-8 output on Windows/Linux to safely print corrupted payloads
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(
+        encoding="utf-8",
+        errors="replace"
+    )
+
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(
+        encoding="utf-8",
+        errors="replace"
+    )
 
 from app.quality.validator import validate_record
 from app.quality.error_rate import calculate_error_rate
@@ -14,6 +27,22 @@ from app.circuit_breaker.states import OPEN
 
 
 def process_records(records):
+    # Handle invalid input before processing the batch
+    if not isinstance(records, list):
+        return {
+            "total_records": 0,
+            "bad_records": 0,
+            "error_rate": 0.0,
+            "circuit_breaker_triggered": False,
+            "dlq_records": [],
+            "valid_records": [],
+            "blocked_records": [],
+            "monitoring_status": create_status(
+                "CLOSED",
+                0.0
+            )
+        }
+
     total_records = len(records)
     bad_records = 0
     dlq_records = []
@@ -22,6 +51,20 @@ def process_records(records):
 
     # Validate every record in the batch
     for record in records:
+
+        # Handle invalid record input safely
+        if not isinstance(record, dict):
+            bad_records += 1
+
+            errors = ["record must be a transaction object"]
+
+            dlq_record = send_to_dlq(
+                record,
+                errors
+            )
+
+            dlq_records.append(dlq_record)
+            continue
 
         # Handle Kafka-level payload errors
         if record.get("__consumer_error__") is True:
@@ -160,4 +203,3 @@ if __name__ == "__main__":
         flush_dlq()
 
         print("\nData Quality Service stopped.")
-

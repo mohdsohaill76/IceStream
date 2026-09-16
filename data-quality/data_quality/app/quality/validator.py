@@ -20,9 +20,11 @@ def validate_record(record):
         return False, errors
 
     # Check required fields
+    # Missing fields are already reported by validate_schema().
+    # Here we only check for NULL values.
     for field in REQUIRED_FIELDS:
-        if field not in record or record[field] is None:
-            errors.append(f"{field} is missing")
+        if field in record and record[field] is None:
+            errors.append(f"{field} is null")
 
     # Check ID type, empty values, and transaction UUID
     for field in ["transaction_id", "customer_id"]:
@@ -72,10 +74,9 @@ def validate_record(record):
 
     # Check merchant
     if "merchant" in record and record["merchant"] is not None:
-        if (
-            not isinstance(record["merchant"], str)
-            or not record["merchant"].strip()
-        ):
+        if not isinstance(record["merchant"], str):
+            errors.append("merchant must be a string")
+        elif not record["merchant"].strip():
             errors.append("merchant cannot be empty")
 
     # Check status
