@@ -1,4 +1,4 @@
-apache-flink==1.18.1
+apache-flink==1.19.2
 kafka-python==2.0.2
 python-dotenv==1.0.1
 pytest==8.0.0
