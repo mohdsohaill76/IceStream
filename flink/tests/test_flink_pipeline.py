@@ -1,7 +1,8 @@
 import json
-import pytest
+import math
 import os
 import sys
+import pytest
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -118,6 +119,40 @@ def test_reject_boolean_amount(flink_processor):
     assert len(outputs) == 1
     assert outputs[0][0].tag_id == DLQ_OUTPUT_TAG.tag_id
     assert "Boolean" in json.loads(outputs[0][1])["error_reason"]
+
+
+def test_reject_nan_and_infinity_amounts(flink_processor):
+    """Verifies that NaN, +Infinity, and -Infinity amounts are strictly rejected to DLQ."""
+    base_dict = {
+        "transaction_id": "tx_inf_001",
+        "customer_id": "cust_01",
+        "currency": "USD",
+        "timestamp": "2026-09-12T10:00:00Z",
+        "merchant": "Amazon",
+        "status": "COMPLETED",
+    }
+
+    # 1. Test NaN
+    nan_dict = dict(base_dict, amount=float("nan"))
+    # Python json.dumps serializes float('nan') as NaN (valid in standard PyFlink json module)
+    outputs_nan = list(flink_processor.process_element(json.dumps(nan_dict), None))
+    assert len(outputs_nan) == 1
+    assert outputs_nan[0][0].tag_id == DLQ_OUTPUT_TAG.tag_id
+    assert "Non-finite" in json.loads(outputs_nan[0][1])["error_reason"]
+
+    # 2. Test +Infinity
+    inf_dict = dict(base_dict, transaction_id="tx_inf_002", amount=float("inf"))
+    outputs_inf = list(flink_processor.process_element(json.dumps(inf_dict), None))
+    assert len(outputs_inf) == 1
+    assert outputs_inf[0][0].tag_id == DLQ_OUTPUT_TAG.tag_id
+    assert "Non-finite" in json.loads(outputs_inf[0][1])["error_reason"]
+
+    # 3. Test -Infinity
+    neginf_dict = dict(base_dict, transaction_id="tx_inf_003", amount=float("-inf"))
+    outputs_neginf = list(flink_processor.process_element(json.dumps(neginf_dict), None))
+    assert len(outputs_neginf) == 1
+    assert outputs_neginf[0][0].tag_id == DLQ_OUTPUT_TAG.tag_id
+    assert "Non-finite" in json.loads(outputs_neginf[0][1])["error_reason"]
 
 
 def test_reject_invalid_currency_and_status(flink_processor):

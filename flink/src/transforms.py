@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 from datetime import datetime
 from pyflink.common import Time
 from pyflink.common.typeinfo import Types
@@ -24,24 +25,25 @@ CANONICAL_SCHEMA_FIELDS = {
 }
 
 ALLOWED_CURRENCIES = {"USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR"}
-ALLOWED_STATUSES = {"COMPLETED", "PENDING", "FAILED", "CANCELLED"}
+# Supports Mahek's generator ("SUCCESS", "PENDING", "FAILED") and legacy ("COMPLETED", "CANCELLED")
+ALLOWED_STATUSES = {"SUCCESS", "COMPLETED", "PENDING", "FAILED", "CANCELLED"}
 
 
 def validate_transaction_schema(data: dict) -> tuple[bool, str, dict]:
     """
     Validates canonical fields, checks enums, rejects boolean amounts, 
-    verifies ISO-8601 timestamps, and constructs a clean, leak-free canonical record.
+    verifies ISO-8601 timestamps, checks finiteness, and constructs a clean canonical record.
     """
-    # 1. Reject any legacy user_id to avoid leakage (even if customer_id is present)
+    # 1. Reject any legacy user_id to prevent leakage
     if "user_id" in data:
         return False, "Schema Validation Failure: Legacy 'user_id' field is forbidden in canonical stream", {}
 
-    # 2. Check for missing required canonical fields
-    missing_fields = [f for f in CANONICAL_SCHEMA_FIELDS if f not in data or data[f] is None]
-    if missing_fields:
-        return False, f"Schema Validation Failure: Missing required fields {missing_fields}", {}
+    # 2. Check for missing or null required canonical fields (catches NULL_INJECTION & MISSING_FIELD)
+    missing_or_null = [f for f in CANONICAL_SCHEMA_FIELDS if f not in data or data[f] is None]
+    if missing_or_null:
+        return False, f"Schema Validation Failure: Missing or null required fields {missing_or_null}", {}
 
-    # 3. Reject unexpected fields
+    # 3. Reject unexpected fields (catches SCHEMA_CHANGE_RATE: 'unexpected_field')
     unexpected_fields = [k for k in data.keys() if k not in CANONICAL_SCHEMA_FIELDS]
     if unexpected_fields:
         return False, f"Schema Validation Failure: Unexpected fields detected {unexpected_fields}", {}
@@ -54,13 +56,16 @@ def validate_transaction_schema(data: dict) -> tuple[bool, str, dict]:
         if not isinstance(val, expected_type):
             return False, f"Schema Validation Failure: Field '{field}' expected {expected_type}, got {type(val).__name__}", {}
 
-    # 5. String sanity (no empty/whitespace strings)
+    # 5. String sanity: Catch empty/whitespace strings (catches customer_id="" and merchant="")
     for str_field in ["transaction_id", "customer_id", "merchant"]:
         if not str(data[str_field]).strip():
             return False, f"Schema Validation Failure: Field '{str_field}' cannot be empty or whitespace", {}
 
-    # 6. Numeric business rule
+    # 6. Numeric checks: Reject NaN, Infinity, zero, and negative amounts
     amount = data["amount"]
+    if not math.isfinite(amount):
+        return False, f"Invalid transaction amount: Non-finite values (NaN/Infinity) are not allowed, got {amount}", {}
+
     if amount <= 0:
         return False, f"Invalid transaction amount: {amount} (must be positive)", {}
 
@@ -73,14 +78,14 @@ def validate_transaction_schema(data: dict) -> tuple[bool, str, dict]:
     if status not in ALLOWED_STATUSES:
         return False, f"Invalid status: '{data['status']}' (allowed: {sorted(list(ALLOWED_STATUSES))})", {}
 
-    # 8. Strict ISO-8601 Timestamp Validation
+    # 8. Strict ISO-8601 Timestamp Validation (catches timestamp='not-a-date')
     raw_ts = str(data["timestamp"]).strip()
     try:
         datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
     except Exception as e:
         return False, f"Invalid timestamp format '{raw_ts}': {str(e)}", {}
 
-    # 9. Build strictly canonical payload (guarantees zero extra fields leak downstream)
+    # 9. Build strictly canonical payload
     clean_record = {
         "transaction_id": str(data["transaction_id"]).strip(),
         "customer_id": str(data["customer_id"]).strip(),
@@ -99,7 +104,7 @@ class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
         self.seen_state = None
 
     def open(self, runtime_context: RuntimeContext):
-        # 24-hour State TTL to prevent unbounded state memory growth
+        # 24-hour State TTL to prevent unbounded state growth
         ttl_config = (
             StateTtlConfig.new_builder(Time.hours(24))
             .set_update_type(StateTtlConfig.UpdateType.OnCreateAndWrite)
@@ -111,7 +116,7 @@ class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
         self.seen_state = runtime_context.get_state(state_desc)
 
     def process_element(self, value: str, ctx: KeyedProcessFunction.Context):
-        # 1. Parse JSON Payload
+        # 1. Parse JSON (Catches MALFORMED_JSON_RATE)
         try:
             data = json.loads(value)
         except Exception as e:
@@ -133,7 +138,7 @@ class TransactionValidationAndDeduplicationFunction(KeyedProcessFunction):
 
         tx_id = str(data.get("transaction_id", "")).strip() or "UNKNOWN"
 
-        # 2. Keyed State Deduplication Check
+        # 2. Keyed State Deduplication (Catches DUPLICATE_RATE)
         if self.seen_state.value():
             logger.info(f"Duplicate transaction detected for ID: {tx_id}")
             dlq_payload = json.dumps({

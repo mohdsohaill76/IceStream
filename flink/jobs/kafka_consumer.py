@@ -35,22 +35,61 @@ logger = logging.getLogger("FlinkKafkaConsumer")
 # Load environment configuration from .env file
 load_dotenv(find_dotenv())
 
+
 def get_checkpoint_uri(raw_path: str) -> str:
-    """Ensures checkpoint path is formatted as a valid file URI for PyFlink."""
+    """
+    Ensures checkpoint path is formatted as a valid file URI for PyFlink
+    across both Linux/WSL and Windows environments.
+    """
+    if not raw_path:
+        raw_path = "/tmp/flink-checkpoints"
+
+    # Already has protocol scheme
     if raw_path.startswith("file://") or raw_path.startswith("hdfs://") or raw_path.startswith("s3://"):
         return raw_path
-    abs_path = os.path.abspath(raw_path).replace("\\", "/")
-    return f"file:///{abs_path}"
 
-# Externalized Configuration (QA Blockers 5 & 6)
+    # Normalize slashes
+    clean_path = raw_path.replace("\\", "/")
+
+    # Linux / WSL absolute paths (e.g. /tmp/flink-checkpoints)
+    if clean_path.startswith("/"):
+        return f"file://{clean_path}"
+
+    # Windows drive paths (e.g. C:/tmp/flink-checkpoints)
+    abs_path = os.path.abspath(clean_path).replace("\\", "/")
+    if not abs_path.startswith("/"):
+        abs_path = f"/{abs_path}"
+
+    return f"file://{abs_path}"
+
+
+# Externalized Configuration (Unified with Harsh's DQ & Team Contract)
 CONFIG = {
     "job_name": "IceStream-Flink-Kafka-Consumer",
-    "bootstrap_servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", os.getenv("KAFKA_BROKER", "localhost:9092")),
-    "input_topic": os.getenv("KAFKA_INPUT_TOPIC", "ecommerce-transactions"),
-    "valid_output_topic": os.getenv("KAFKA_VALID_TOPIC", "processed-transactions"),
-    "dlq_output_topic": os.getenv("KAFKA_DLQ_TOPIC", "transactions-dlq"),
-    "consumer_group": os.getenv("KAFKA_CONSUMER_GROUP", "flink_ecommerce_group"),
-    "checkpoint_dir": get_checkpoint_uri(os.getenv("FLINK_CHECKPOINT_DIR", "file:///tmp/flink-checkpoints")),
+    "bootstrap_servers": os.getenv(
+        "KAFKA_BOOTSTRAP_SERVERS", 
+        os.getenv("KAFKA_BROKER", "localhost:9092")
+    ),
+    "input_topic": os.getenv(
+        "KAFKA_INPUT_TOPIC", 
+        os.getenv("INPUT_TOPIC", "ecommerce-transactions")
+    ),
+    "valid_output_topic": os.getenv(
+        "KAFKA_VALID_TOPIC", 
+        os.getenv("VALID_OUTPUT_TOPIC", "processed-transactions")
+    ),
+    # Unified DLQ topic with Harsh's DQ module: ecommerce-transactions-dlq
+    "dlq_output_topic": os.getenv(
+        "DLQ_OUTPUT_TOPIC", 
+        os.getenv("KAFKA_DLQ_TOPIC", "ecommerce-transactions-dlq")
+    ),
+    "consumer_group": os.getenv(
+        "KAFKA_CONSUMER_GROUP", 
+        os.getenv("CONSUMER_GROUP", "flink_ecommerce_group")
+    ),
+    "checkpoint_dir": get_checkpoint_uri(
+        os.getenv("FLINK_CHECKPOINT_DIR", "/tmp/flink-checkpoints")
+    ),
     "parallelism": int(os.getenv("FLINK_PARALLELISM", "1")),
     "checkpoint_interval_ms": int(os.getenv("FLINK_CHECKPOINT_INTERVAL_MS", "10000")),
     "max_out_of_orderness_sec": int(os.getenv("FLINK_MAX_OUT_OF_ORDERNESS_SEC", "5")),
@@ -123,7 +162,9 @@ def run_flink_job():
 
     if os.path.exists(jar_path):
         clean_jar_path = jar_path.replace("\\", "/")
-        formatted_path = f"file:///{clean_jar_path}"
+        if not clean_jar_path.startswith("/"):
+            clean_jar_path = f"/{clean_jar_path}"
+        formatted_path = f"file://{clean_jar_path}"
         env.add_jars(formatted_path)
         logger.info(f"Loaded Kafka Connector JAR: {formatted_path}")
     else:
@@ -137,7 +178,7 @@ def run_flink_job():
     env.get_checkpoint_config().set_checkpoint_storage(
         FileSystemCheckpointStorage(CONFIG["checkpoint_dir"])
     )
-    
+
     env.set_restart_strategy(
         RestartStrategies.fixed_delay_restart(
             restart_attempts=3,
