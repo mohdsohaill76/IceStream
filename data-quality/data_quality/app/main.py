@@ -1,4 +1,5 @@
-# Process transactions through validation, DLQ, circuit breaker, and monitoring
+# Process transactions through validation, DLQ,
+# circuit breaker, duplicate detection, and monitoring
 
 import sys
 import time
@@ -16,14 +17,19 @@ if hasattr(sys.stderr, "reconfigure"):
         errors="replace"
     )
 
+from app.downstream.valid_producer import send_valid_record
+from app.downstream.valid_producer import flush_valid_producer
 from app.quality.validator import validate_record
 from app.quality.error_rate import calculate_error_rate
 from app.dlq.dlq_producer import send_to_dlq
 from app.dlq.dlq_producer import flush_dlq
-from app.circuit_breaker.circuit_breaker import check_circuit
+from app.circuit_breaker.circuit_breaker import (
+    check_circuit,
+    circuit
+)
+from app.circuit_breaker.states import CLOSED, OPEN, HALF_OPEN
 from app.monitoring.status_producer import create_status
 from app.circuit_breaker.thresholds import ERROR_RATE_THRESHOLD
-from app.circuit_breaker.states import OPEN
 
 
 def process_records(records):
@@ -38,7 +44,7 @@ def process_records(records):
             "valid_records": [],
             "blocked_records": [],
             "monitoring_status": create_status(
-                "CLOSED",
+                CLOSED,
                 0.0
             )
         }
@@ -49,6 +55,10 @@ def process_records(records):
     valid_records = []
     blocked_records = []
 
+    # Track transaction IDs already accepted in this batch.
+    # This prevents duplicate transactions from being forwarded.
+    seen_transaction_ids = set()
+
     # Validate every record in the batch
     for record in records:
 
@@ -56,7 +66,9 @@ def process_records(records):
         if not isinstance(record, dict):
             bad_records += 1
 
-            errors = ["record must be a transaction object"]
+            errors = [
+                "record must be a transaction object"
+            ]
 
             dlq_record = send_to_dlq(
                 record,
@@ -113,10 +125,31 @@ def process_records(records):
             )
 
             dlq_records.append(dlq_record)
+            continue
 
-        else:
-            # Keep valid records temporarily
-            valid_records.append(record)
+        # Duplicate transaction detection
+        transaction_id = record.get("transaction_id")
+
+        if transaction_id in seen_transaction_ids:
+            bad_records += 1
+
+            duplicate_error = [
+                "duplicate transaction_id"
+            ]
+
+            dlq_record = send_to_dlq(
+                record,
+                duplicate_error
+            )
+
+            dlq_records.append(dlq_record)
+            continue
+
+        # First occurrence of this transaction
+        seen_transaction_ids.add(transaction_id)
+
+        # Keep valid records temporarily
+        valid_records.append(record)
 
     # Calculate error rate for the complete batch
     error_rate = calculate_error_rate(
@@ -124,14 +157,42 @@ def process_records(records):
         total_records
     )
 
+    # Store the circuit state before checking the current batch.
+    previous_state = circuit.state
+
     # Update circuit breaker state
     circuit_state = check_circuit(error_rate)
+
+    # Recovery handling:
+    #
+    # OPEN -> HALF_OPEN happens automatically after recovery timeout.
+    #
+    # When HALF_OPEN receives a healthy batch, recovery succeeds
+    # and the circuit becomes CLOSED.
+    #
+    # When HALF_OPEN receives another bad batch, recovery fails
+    # and the circuit becomes OPEN again.
+    if previous_state == HALF_OPEN:
+        recovery_successful = (
+            error_rate <= ERROR_RATE_THRESHOLD
+        )
+
+        circuit_state = circuit.recovery_result(
+            recovery_successful
+        )
 
     # Circuit OPEN blocks valid records from downstream processing.
     # Blocked records are not considered invalid and are not sent to DLQ.
     if circuit_state == OPEN:
         blocked_records = valid_records
         valid_records = []
+
+    # Forward valid records to the downstream Kafka topic
+    for record in valid_records:
+        send_valid_record(record)
+
+    # Flush all pending valid records once per batch
+    flush_valid_producer()
 
     # Create monitoring status
     monitoring_status = create_status(
@@ -183,7 +244,8 @@ if __name__ == "__main__":
             # Check maximum wait time
             batch_timed_out = (
                 batch_start_time is not None
-                and time.monotonic() - batch_start_time >= MAX_WAIT_SECONDS
+                and time.monotonic() - batch_start_time
+                >= MAX_WAIT_SECONDS
             )
 
             # Process when batch is full OR timeout is reached
@@ -201,5 +263,6 @@ if __name__ == "__main__":
             print(result)
 
         flush_dlq()
+        flush_valid_producer()
 
         print("\nData Quality Service stopped.")

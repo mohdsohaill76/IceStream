@@ -204,3 +204,22 @@ def test_open_circuit_blocks_valid_records(monkeypatch):
 
     # Only the genuinely invalid record goes to DLQ
     assert len(result["dlq_records"]) == 1
+
+@pytest.fixture(autouse=True)
+def reset_circuit(monkeypatch):
+    # Start every test with a fresh closed circuit
+    circuit.state = CLOSED
+
+    # Prevent tests from connecting to real Kafka
+    monkeypatch.setattr(
+        main,
+        "send_valid_record",
+        lambda record: record
+    )
+
+    # Prevent tests from waiting for a real Kafka producer
+    monkeypatch.setattr(
+        main,
+        "flush_valid_producer",
+        lambda: None
+    )
