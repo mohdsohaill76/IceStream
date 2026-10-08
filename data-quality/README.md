@@ -1,169 +1,123 @@
-## IceStream - Data Quality & Circuit Breaker
-# Overview
+# IceStream
 
-This module is responsible for maintaining data quality in the IceStream pipeline.
+## Project
 
-It validates transaction data, calculates the error rate, sends invalid records to the DLQ, and manages the Circuit Breaker.
+**IceStream – Real-Time Lakehouse Observability**
 
-The Circuit Breaker threshold is 2%.
+## Role
 
-Responsibilities
-Validate transaction data
-Detect NULL values
-Detect invalid values
-Detect schema errors
-Calculate error rate
-Manage Circuit Breaker
-Send invalid records to DLQ
-Manage recovery status
-Handle invalid Kafka messages
-Data Quality Flow
-Incoming Data
-      |
-      v
-Data Validation
-      |
-      v
-Error Rate Calculation
-      |
-      v
-Error Rate > 2%?
-    /       \
-   No       Yes
-   |         |
-   v         v
-Normal    Circuit Breaker
-Processing     |
-               v
-              DLQ
-Validation
+** Data Quality & Circuit Breaker Developer **
 
-The following transaction fields are validated:
+## Technologies
 
-transaction_id
-customer_id
-amount
-currency
-timestamp
-merchant
-status
+- Python
+- Apache Kafka
+- Pytest
+- Docker
+- Git & Github
+
+## Data Quality
+
+The Data Quality module validates incoming transaction data and identifies data-quality issues.
 
 Validation includes:
 
 Required fields
-NULL values
-Empty values
-Data types
-UUID format
-Amount value
-Currency
-Timestamp
-Transaction status
-Error Rate
+- NULL values
+- Empty values
+- Invalid data types
+- Invalid transaction ID
+- Invalid amount
+- Invalid currency
+- Invalid timestamp
+- Invalid transaction status
 
-The error rate is calculated using:
+## Error Rate
 
-Error Rate = (Bad Records / Total Records) * 100
+The module calculates the error rate for processed records.
 
-The Circuit Breaker is activated when the error rate is greater than 2%.
+Error Rate = (Bad Records / Total Records) × 100
 
-Circuit Breaker
+The Circuit Breaker threshold is 2%.
 
-The Circuit Breaker has three states:
+## Circuit Breaker
+
+The Circuit Breaker protects the pipeline when the data error rate exceeds the configured threshold.
+
+States:
 
 CLOSED
-   |
-   | Error Rate > 2%
-   v
 OPEN
-   |
-   | Recovery Timeout
-   v
 HALF_OPEN
 
-Recovery result:
+Recovery is handled by checking the pipeline status after the recovery timeout.
 
-HALF_OPEN
-   |
-   +-- Success --> CLOSED
-   |
-   +-- Failure --> OPEN
-Dead Letter Queue
+## Dead Letter Queue
 
-Invalid records are sent to the Dead Letter Queue (DLQ).
+Invalid records are sent to the Dead Letter Queue (DLQ) along with their validation errors.
 
-Each DLQ record contains:
+The DLQ helps keep invalid records separate from normal processing.
 
-Record
-Validation errors
+## Kafka Handling
 
-This keeps invalid records separate from normal processing.
+The module consumes transaction messages from Kafka and handles invalid Kafka payloads.
 
-Kafka Handling
+Invalid or malformed messages are sent to the DLQ with the related error information.
 
-The module consumes transaction messages from Kafka.
+## Testing
 
-It handles:
+Automated tests cover:
 
-Valid JSON messages
-Invalid JSON messages
-Invalid payloads
-Non-object JSON data
-
-Invalid Kafka messages are sent to the DLQ with the related error information.
-
-Project Structure
-data-quality/
-|
-├── app/
-│   ├── circuit_breaker/
-│   ├── quality/
-│   ├── dlq/
-│   ├── downstream/
-│   ├── monitoring/
-│   ├── kafka_consumer.py
-│   ├── config.py
-│   └── main.py
-|
-├── tests/
-├── requirements.txt
-└── Dockerfile
-Testing
-
-Tests cover:
-
-Data validation
-Schema validation
-Error rate calculation
-Circuit Breaker
-Kafka consumer
-DLQ handling
-Recovery handling
+- Data validation
+- Schema validation
+- Error rate calculation
+- Circuit Breaker
+- Kafka consumer handling
+- DLQ handling
+- Recovery handling
 
 Current test result:
 
 59 tests passed
 
-Run tests with:
+Run tests using:
 
 pytest
-Docker
 
-Build the image:
+## Docker
+
+Build the Docker image:
 
 docker build -t icestream-data-quality .
 
 Run the service:
 
 docker run --rm icestream-data-quality
-Technologies
-Python
-Apache Kafka
-Pytest
-Docker
-Git & GitHub
-Project Role
 
-Data Quality + Circuit Breaker Developer
+## Project Structure
 
-Responsible for data validation, error-rate calculation, Circuit Breaker handling, DLQ processing, and recovery status in the IceStream team project.
+The Data Quality module is organized into the following folders and files:
+
+app/
+      - circuit_breaker/
+      - quality/
+      - dlq/
+      - downstream/
+      - monitoring/
+      - kafka_consumer.py
+      - config.py
+      - main.py
+tests/
+requirements.txt
+Dockerfile
+
+## Project Responsibility
+
+The Data Quality & Circuit Breaker module is responsible for:
+
+- Transaction data validation
+- Error-rate calculation
+- Circuit Breaker management
+- DLQ processing
+- Kafka payload handling
+- Recovery status management
