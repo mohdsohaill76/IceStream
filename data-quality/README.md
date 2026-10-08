@@ -6,7 +6,7 @@
 
 ## Role
 
-** Data Quality & Circuit Breaker Developer **
+**Data Quality & Circuit Breaker Developer**
 
 ## Technologies
 
@@ -98,18 +98,22 @@ docker run --rm icestream-data-quality
 
 The Data Quality module is organized into the following folders and files:
 
-app/
-      - circuit_breaker/
-      - quality/
-      - dlq/
-      - downstream/
-      - monitoring/
-      - kafka_consumer.py
-      - config.py
-      - main.py
-tests/
-requirements.txt
-Dockerfile
+## Project Structure
+
+The Data Quality module is organized into the following folders and files:
+
+- `app/`
+  - `circuit_breaker/`
+  - `quality/`
+  - `dlq/`
+  - `downstream/`
+  - `monitoring/`
+  - `kafka_consumer.py`
+  - `config.py`
+  - `main.py`
+- `tests/`
+- `requirements.txt`
+- `Dockerfile`
 
 ## Project Responsibility
 
