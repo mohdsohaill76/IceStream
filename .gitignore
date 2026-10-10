@@ -93,5 +93,13 @@ build/
 # Iceberg / Data / Warehouses (local test data)
 .iceberg/
 warehouse/
+iceberg/warehouse/
+*.db
+*.sqlite
 derby.log
 metastore_db/
+
+# Runtime shared state and temporary status
+shared_circuit_status.json
+*.dq_status.json
+.dq_status.json
