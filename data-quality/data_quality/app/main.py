@@ -278,6 +278,7 @@ def run_service(
     pending_blocked_records = []
     batch_start_time = None
     iterations = 0
+    last_heartbeat_time = clock()
 
     try:
         while True:
@@ -288,6 +289,11 @@ def run_service(
                 break
 
             iterations += 1
+
+            now = clock()
+            if (now - last_heartbeat_time) >= 15.0:
+                save_shared_status(circuit.state, 0.0, is_alive=True)
+                last_heartbeat_time = now
 
             # Check if circuit is OPEN and eligible for recovery check
             if circuit.state == OPEN:

@@ -5,18 +5,28 @@ from app.routes.incidents import router as incidents_router
 from app.routes.lakehouse import router as lakehouse_router
 from app.routes.pipeline import router as pipeline_router
 
-from fastapi.middleware.cors import CORSMiddleware
-
 app = FastAPI(
     title=settings.app_name,
     description="IceStream Backend & Integration Layer",
     version="0.1.0",
 )
 
+import os
+from fastapi.middleware.cors import CORSMiddleware
+
+# Configure CORS: support explicit production domains with credentials, or wildcard for local dev
+_cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+if _cors_origins_env == "*":
+    _cors_origins = ["*"]
+    _cors_credentials = False
+else:
+    _cors_origins = [origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()]
+    _cors_credentials = True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
