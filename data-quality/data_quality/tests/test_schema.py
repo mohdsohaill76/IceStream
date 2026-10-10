@@ -1,0 +1,72 @@
+# Test transaction schema validation
+from app.quality.schema_validator import validate_schema
+from app.quality.validator import validate_record
+
+def test_valid_schema():
+    # Sample transaction with all required fields
+    record = {
+        "transaction_id": "TXN001",
+        "customer_id": "CUST001",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-101",
+        "status": "SUCCESS"
+    }
+
+    valid, errors = validate_schema(record)
+
+    assert valid is True
+    assert errors == []
+
+def test_missing_field():
+    # Transaction with a missing required field
+    record = {
+        "transaction_id": "TXN002",
+        "customer_id": "CUST002",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-102"
+    }
+
+    valid, errors = validate_schema(record)
+
+    assert valid is False
+    assert "status is missing" in errors
+
+def test_unexpected_field():
+    # Transaction with an unexpected field
+    record = {
+        "transaction_id": "TXN003",
+        "customer_id": "CUST003",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-103",
+        "status": "SUCCESS",
+        "unexpected_field": "BAD"
+    }
+
+    valid, errors = validate_schema(record)
+
+    assert valid is False
+    assert "unexpected_field is not allowed" in errors
+
+def test_unexpected_field_rejected_by_validate_record():
+    # Unexpected fields must be rejected by the main validation path
+    record = {
+        "transaction_id": "TXN006",
+        "customer_id": "CUST006",
+        "amount": 500,
+        "currency": "INR",
+        "timestamp": "2026-09-03T10:00:00Z",
+        "merchant": "MERCHANT-106",
+        "status": "SUCCESS",
+        "unexpected_field": "SCHEMA_CHANGE"
+    }
+
+    valid, errors = validate_record(record)
+
+    assert valid is False
+    assert "unexpected_field is not allowed" in errors
